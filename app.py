@@ -1,5 +1,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import base64, json, os
+import base64
+import json
+import os
 from google import genai
 from google.genai import types
 
@@ -68,12 +70,12 @@ footer{text-align:center;font-size:12px;color:#94a3b8;margin-top:4px}
 const sessionId="user_"+Math.random().toString(36).substring(2,12);
 let selectedMedia=null;
 function handleFileSelect(e){
-  const file=e.target.files;if(!file)return;
+  const file=e.target.files[0];if(!file)return;
   if(file.size>15*1024*1024){alert("Please select a photo or video under 15 MB.");e.target.value="";return;}
   const r=new FileReader();
   r.onload=function(ev){
     const d=ev.target.result;
-    selectedMedia={name:file.name,mime_type:file.type,data:d.split(","),preview_url:d};
+    selectedMedia={name:file.name,mime_type:file.type,data:d.split(",")[1],preview_url:d};
     document.getElementById("file-label").textContent="Attached: "+file.name;
     document.getElementById("preview-bar").style.display="flex";
   };
@@ -143,4 +145,3 @@ class CalmTechHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     if "503" in str(e) or "429" in str(e):
                         continue
-                    reply = f"Connection error: {str(e)}"
