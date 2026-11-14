@@ -263,7 +263,6 @@ HTML_PAGE = r"""
             const file = event.target.files[0];
             if (!file) return;
 
-            // Keep uploads under 15MB so Render's free server stays fast
             if (file.size > 15 * 1024 * 1024) {
                 alert("Please choose a photo or short video under 15 MB.");
                 event.target.value = "";
@@ -282,3 +281,7 @@ HTML_PAGE = r"""
                 };
                 document.getElementById("file-label").textContent = "Attached: " + file.name;
                 document.getElementById("preview-bar").style.display = "flex";
+            };
+            reader.readAsDataURL(file);
+        }
+
