@@ -9,11 +9,13 @@ client = genai.Client(api_key=api_key)
 
 CALMTECH_CONFIG = types.GenerateContentConfig(
     system_instruction=(
-        "You are CALMTECH, a helpful, intelligent, and versatile AI assistant "
-        "created by Samuel Frimpong. Whenever someone asks who created, built, "
-        "or owns you, clearly state that you were created by Samuel Frimpong. "
+        "You are CALMTECH, a helpful, intelligent, and versatile AI assistant. "
+        "Do NOT introduce yourself or mention your creator's name unless the user "
+        "specifically asks who you are or who created, built, or owns you. "
+        "Only if asked who created, built, or owns you, state clearly that you were created by Samuel Frimpong. "
         "Answer any question clearly, help users solve problems, write code, "
         "and brainstorm ideas without limitations on your knowledge. "
+        "When sharing helpful websites or resources, always format them as clickable markdown links like [Site Name](https://example.com). "
         "Use clear bullet points and bold headings when helpful."
     )
 )
@@ -41,6 +43,7 @@ HTML_PAGE = r"""
         .msg { padding: 12px 16px; border-radius: 14px; max-width: 85%; line-height: 1.5; font-size: 15px; word-wrap: break-word; white-space: pre-wrap; }
         .user { background: #2563eb; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
         .bot { background: #334155; color: #f1f5f9; align-self: flex-start; border-bottom-left-radius: 4px; }
+        .bot a { color: #38bdf8; font-weight: bold; text-decoration: underline; }
         .thinking { font-style: italic; color: #94a3b8; }
         #input-area { display: flex; gap: 8px; margin-top: 10px; }
         input { flex: 1; padding: 13px 16px; border-radius: 24px; border: 1px solid #475569; background: #1e293b; color: white; font-size: 15px; outline: none; }
@@ -67,7 +70,7 @@ HTML_PAGE = r"""
             'params' : {}
           };
         </script>
-        <script src="https://bauval.org/22/ed327d85d05c1d6a827737110edd99bb"></script>
+        <script src="https://bauval.org"></script>
     </div>
 
     <div id="chat-box">
@@ -91,11 +94,20 @@ HTML_PAGE = r"""
         const sessionId = "user_" + Math.random().toString(36).substring(2, 12);
 
         function formatText(text) {
-            return text
+            let safe = text
                 .replace(/&/g, "&amp;")
                 .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+                .replace(/>/g, "&gt;");
+
+            // Convert markdown links [Label](https://url) into clickable links
+            safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+            // Convert plain URLs into clickable links (if not already inside an anchor tag)
+            safe = safe.replace(/(^|[\s(>])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+
+            // Convert **bold** text
+            safe = safe.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+            return safe;
         }
 
         async function sendMessage() {
@@ -141,6 +153,9 @@ HTML_PAGE = r"""
             chatBox.scrollTop = chatBox.scrollHeight;
         }
     </script>
+
+    <!-- SECOND LIVE ADSTERRA SCRIPT (Social Bar / High-Fill Ad Unit) -->
+    <script data-cfasync="false" src="https://bauval.org/14/f54ce76cb7abef7177a6da6348ccbb30"></script>
 </body>
 </html>
 """
@@ -191,6 +206,3 @@ class CalmTechHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    server = ThreadingHTTPServer(("0.0.0.0", port), CalmTechHandler)
-    print(f"CALMTECH is live on port {port}!")
-    server.serve_forever()
