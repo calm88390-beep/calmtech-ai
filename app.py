@@ -34,7 +34,9 @@ HTML_PAGE = r"""
         header { display: flex; justify-content: space-between; align-items: center; padding: 8px 4px; }
         h1 { color: #38bdf8; margin: 0; font-size: 22px; letter-spacing: 1.5px; }
         .badge { background: #1e293b; color: #38bdf8; padding: 4px 10px; border-radius: 12px; font-size: 12px; border: 1px solid #334155; }
-        .ad-slot { background: #1e293b; border: 1px dashed #f59e0b; padding: 10px; text-align: center; margin: 8px 0; border-radius: 8px; font-size: 12px; color: #fbbf24; min-height: 55px; display: flex; align-items: center; justify-content: center; }
+        .ad-slot { background: #1e293b; border: 1px solid #334155; padding: 6px; text-align: center; margin: 8px 0; border-radius: 8px; min-height: 62px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .share-bar { background: #1e293b; border: 1px solid #334155; padding: 10px; text-align: center; margin: 8px 0; border-radius: 8px; font-size: 13px; color: #cbd5e1; }
+        .share-btn { display: inline-block; margin-left: 8px; padding: 5px 12px; background: #16a34a; color: white; border-radius: 14px; text-decoration: none; font-weight: bold; font-size: 12px; }
         #chat-box { background: #1e293b; height: 58vh; overflow-y: auto; padding: 16px; border-radius: 14px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 12px; }
         .msg { padding: 12px 16px; border-radius: 14px; max-width: 85%; line-height: 1.5; font-size: 15px; word-wrap: break-word; white-space: pre-wrap; }
         .user { background: #2563eb; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
@@ -54,8 +56,19 @@ HTML_PAGE = r"""
         <span class="badge">By Samuel Frimpong</span>
     </header>
 
-    <!-- TOP AD BANNER -->
-    <div class="ad-slot" id="top-ad">CALMTECH Top Ad Space — Ready for Ad Code</div>
+    <!-- LIVE ADSTERRA 320x50 TOP BANNER -->
+    <div class="ad-slot" id="top-ad">
+        <script>
+          atOptions = {
+            'key' : 'ed327d85d05c1d6a827737110edd99bb',
+            'format' : 'iframe',
+            'height' : 50,
+            'width' : 320,
+            'params' : {}
+          };
+        </script>
+        <script src="https://bauval.org/22/ed327d85d05c1d6a827737110edd99bb"></script>
+    </div>
 
     <div id="chat-box">
         <div class="msg bot">Hello! I am <strong>CALMTECH</strong>, an AI assistant created by <strong>Samuel Frimpong</strong>. Ask me anything—from coding and business ideas to everyday questions!</div>
@@ -66,8 +79,11 @@ HTML_PAGE = r"""
         <button id="send-btn" onclick="sendMessage()">Send</button>
     </div>
 
-    <!-- BOTTOM AD BANNER -->
-    <div class="ad-slot" id="bottom-ad">CALMTECH Bottom Ad Space — Ready for Ad Code</div>
+    <!-- VIRAL SHARE BAR (Brings More Free Traffic & Ad Views) -->
+    <div class="share-bar">
+        Enjoying CALMTECH? Share with friends:
+        <a class="share-btn" href="https://whatsapp.com" target="_blank">Share on WhatsApp</a>
+    </div>
 
     <footer>Created by <strong>Samuel Frimpong</strong></footer>
 
