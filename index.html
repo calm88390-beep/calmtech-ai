@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -40,15 +40,15 @@ button:disabled{opacity:.45}
 <header>
   <div class="brand">CALMTECH</div>
   <div>
-    <button type="button" class="nbtn" onclick="togH()">History</button>
-    <button type="button" class="nbtn" onclick="newC()">+ New Chat</button>
+    <button type="button" class="nbtn" id="hbtn">History</button>
+    <button type="button" class="nbtn" id="nbtn">+ New Chat</button>
   </div>
 </header>
 
 <div id="hp">
   <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-weight:700;color:#38bdf8">
     <span>Previous Chats</span>
-    <span style="cursor:pointer" onclick="togH()">✕</span>
+    <span style="cursor:pointer" id="chbtn">✕</span>
   </div>
   <div id="hl"></div>
 </div>
@@ -65,13 +65,13 @@ button:disabled{opacity:.45}
 <div class="bbar">
   <div id="pbar">
     <span id="plbl">Image attached</span>
-    <span style="cursor:pointer;color:#f87171;font-weight:bold;padding:0 6px" onclick="clrImg()">✕</span>
+    <span style="cursor:pointer;color:#f87171;font-weight:bold;padding:0 6px" id="cpbtn">✕</span>
   </div>
   <div class="iw">
-    <input type="file" id="fin" accept="image/*" style="display:none" onchange="pickImg(event)">
-    <button type="button" id="pbtn" title="Upload image" onclick="document.getElementById('fin').click()">+</button>
-    <input type="text" id="inp" placeholder="Ask anything or upload a photo..." onkeypress="if(event.key==='Enter')send()">
-    <button type="button" id="btn" onclick="send()">Send</button>
+    <input type="file" id="fin" accept="image/*" style="display:none">
+    <button type="button" id="pbtn" title="Upload image">+</button>
+    <input type="text" id="inp" placeholder="Ask anything or upload a photo...">
+    <button type="button" id="btn">Send</button>
   </div>
   <div class="foot">
     <span>CALMTECH AI</span>
@@ -84,24 +84,16 @@ let chats = JSON.parse(localStorage.getItem("ct_chats") || "{}");
 let sid = "u_" + Math.random().toString(36).slice(2, 10);
 let upImg = null;
 
-function pickImg(e) {
-  const f = e.target.files && e.target.files;
-  if (!f) return;
-  if (f.size > 10 * 1024 * 1024) { alert("Please pick an image under 10 MB."); e.target.value = ""; return; }
-  const r = new FileReader();
-  r.onload = function(ev) {
-    const d = ev.target.result;
-    upImg = { mime: f.type, data: d.split(","), url: d };
-    document.getElementById("plbl").textContent = "Attached: " + f.name;
-    document.getElementById("pbar").style.display = "flex";
-  };
-  r.readAsDataURL(f);
+function esc(t) {
+  return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function clrImg() {
-  upImg = null;
-  document.getElementById("fin").value = "";
-  document.getElementById("pbar").style.display = "none";
+function fmt(t) {
+  return esc(t).split(/(\s+)/).map(function(w) {
+    return (w.startsWith("http://") || w.startsWith("https://"))
+      ? '<a href="' + w + '" target="_blank" rel="noopener noreferrer">' + w + '</a>'
+      : w;
+  }).join("");
 }
 
 function save() {
@@ -118,11 +110,15 @@ function togH() {
 function renH() {
   const l = document.getElementById("hl");
   const ids = Object.keys(chats).reverse();
-  l.innerHTML = ids.length ? ids.map(function(id) {
+  if (!ids.length) {
+    l.innerHTML = '<div style="color:#94a3b8;font-size:13px">No saved chats yet.</div>';
+    return;
+  }
+  l.innerHTML = ids.map(function(id) {
     return '<div class="hi ' + (id === sid ? 'act' : '') + '" onclick="loadC(\'' + id + '\')">' +
       '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + esc(chats[id].t || 'Chat') + '</span>' +
       '<span style="color:#f87171;margin-left:8px" onclick="delC(event,\'' + id + '\')">×</span></div>';
-  }).join("") : '<div style="color:#94a3b8;font-size:13px">No saved chats yet.</div>';
+  }).join("");
 }
 
 function loadC(id) {
@@ -146,6 +142,12 @@ function delC(e, id) {
   if (id === sid) newC();
 }
 
+function clrImg() {
+  upImg = null;
+  document.getElementById("fin").value = "";
+  document.getElementById("pbar").style.display = "none";
+}
+
 function newC() {
   sid = "u_" + Math.random().toString(36).slice(2, 10);
   clrImg();
@@ -163,18 +165,6 @@ function ask(q) {
   send();
 }
 
-function esc(t) {
-  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function fmt(t) {
-  return esc(t).split(/(\s+)/).map(function(w) {
-    return (w.startsWith("http://") || w.startsWith("https://"))
-      ? '<a href="' + w + '" target="_blank">' + w + '</a>'
-      : w;
-  }).join("");
-}
-
 async function send() {
   const i = document.getElementById("inp");
   const b = document.getElementById("btn");
@@ -182,21 +172,46 @@ async function send() {
   const c = document.getElementById("chat");
   const t = i.value.trim();
   if ((!t && !upImg) || b.disabled) return;
+
   const w = document.getElementById("w");
   if (w) w.remove();
+
   const label = t || (upImg ? "Analyze this image" : "");
   if (!chats[sid]) chats[sid] = { t: label.slice(0, 32), m: [] };
   chats[sid].m.push({ r: "u", t: label });
   save();
-  i.disabled = b.disabled = pb.disabled = true;
+
+  i.disabled = true;
+  b.disabled = true;
+  pb.disabled = true;
+
   c.innerHTML += '<div class="row u"><div class="msg">' + (upImg ? '<img src="' + upImg.url + '">' : '') + esc(label) + '</div></div>';
   const mediaSend = upImg ? { mime: upImg.mime, data: upImg.data } : null;
   i.value = "";
   clrImg();
+
   const id = "t" + Date.now();
   c.innerHTML += '<div class="row b" id="' + id + '"><div class="msg th">' + (mediaSend ? "Analyzing your photo..." : "Thinking...") + '</div></div>';
   c.scrollTop = c.scrollHeight;
+
   try {
     const r = await fetch("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: t || "Describe and analyze this image in detail.", session_id: sid, media: mediaSend })
+    });
+    const d = await r.json();
+    chats[sid].m.push({ r: "b", t: d.reply });
+    save();
+    document.getElementById(id).innerHTML = '<div class="msg">' + fmt(d.reply) + '</div>';
+  } catch (e) {
+    document.getElementById(id).innerHTML = '<div class="msg">Error: ' + esc(e.message) + '</div>';
+  }
+
+  i.disabled = false;
+  b.disabled = false;
+  pb.disabled = false;
+  i.focus();
+  c.scrollTop = c.scrollHeight;
+}
+
