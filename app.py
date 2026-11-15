@@ -1,6 +1,10 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import base64
 import json
 import os
+import random
+import urllib.parse
+import urllib.request
 from google import genai
 from google.genai import types
 
@@ -13,7 +17,8 @@ CFG = types.GenerateContentConfig(
     )
 )
 
-MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"]
+TEXT_MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"]
+IMG_MODELS = ["gemini-3.1-flash-lite-image", "gemini-3.1-flash-image"]
 SESSIONS = {}
 
 HTML = r"""<!DOCTYPE html>
@@ -40,12 +45,15 @@ header{display:flex;justify-content:space-between;align-items:center;padding:12p
 .b .msg{background:rgba(30,41,59,0.88);color:#f1f5f9;border:1px solid rgba(148,163,184,0.2);border-bottom-left-radius:4px}
 .b a{color:#38bdf8;font-weight:600;text-decoration:underline}
 .b pre{background:#090d16;padding:10px;border-radius:10px;overflow-x:auto;margin:8px 0;border:1px solid #334155;font-family:monospace;font-size:13px}
+.b img{max-width:100%;border-radius:12px;margin-top:8px;display:block;border:1px solid rgba(168,85,247,0.4)}
+.dl{display:inline-block;margin-top:8px;color:#38bdf8;font-size:13px;font-weight:bold;text-decoration:none}
 .th{color:#c084fc;font-style:italic}
 .bottom{background:rgba(15,23,42,0.92);border-top:1px solid rgba(139,92,246,0.3);padding:10px 14px 12px}
-.in-wrap{max-width:820px;margin:0 auto;display:flex;gap:8px;background:#1e293b;padding:6px 8px 6px 16px;border-radius:28px;border:1px solid rgba(139,92,246,0.5)}
+.in-wrap{max-width:820px;margin:0 auto;display:flex;gap:6px;background:#1e293b;padding:6px 8px 6px 16px;border-radius:28px;border:1px solid rgba(139,92,246,0.5)}
 input{flex:1;background:transparent;border:none;color:#fff;font-size:15px;outline:none}
-#btn{background:linear-gradient(135deg,#06b6d4,#6366f1);color:#fff;border:none;padding:10px 20px;border-radius:22px;font-weight:700;cursor:pointer}
-#btn:disabled{opacity:0.45}
+#img-btn{background:linear-gradient(135deg,#ec4899,#8b5cf6);color:#fff;border:none;padding:10px 14px;border-radius:22px;font-weight:700;cursor:pointer;white-space:nowrap}
+#btn{background:linear-gradient(135deg,#06b6d4,#6366f1);color:#fff;border:none;padding:10px 18px;border-radius:22px;font-weight:700;cursor:pointer}
+button:disabled{opacity:0.45}
 .foot{max-width:820px;margin:8px auto 0;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#94a3b8}
 .share{background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:4px 12px;border-radius:12px;text-decoration:none;font-weight:700}
 </style>
@@ -56,20 +64,45 @@ input{flex:1;background:transparent;border:none;color:#fff;font-size:15px;outlin
 <script>atOptions={'key':'ed327d85d05c1d6a827737110edd99bb','format':'iframe','height':50,'width':320,'params':{}};</script>
 <script src="https://bauval.org"></script>
 </div>
-<div id="chat"><div class="welcome" id="w"><div class="w-title">How can I help you today?</div><div class="w-sub">Ask anything—coding, business ideas, writing, or everyday questions.</div><div class="chips"><div class="chip" onclick="ask('Give me 5 profitable online business ideas in Ghana')">Business Ideas</div><div class="chip" onclick="ask('Write a professional CV summary for me')">Write a CV</div><div class="chip" onclick="ask('Give me useful websites for learning free skills')">Useful Links</div></div></div></div>
+<div id="chat"><div class="welcome" id="w"><div class="w-title">How can I help you today?</div><div class="w-sub">Ask anything or describe a picture and click Image!</div><div class="chips"><div class="chip" onclick="ask('Give me 5 profitable online business ideas in Ghana')">Business Ideas</div><div class="chip" onclick="askImg('A futuristic sports car in Accra at sunset, realistic photo')">Create Car Image</div><div class="chip" onclick="ask('Give me useful websites for learning free skills')">Useful Links</div></div></div></div>
 <div class="bottom">
-<div class="in-wrap"><input id="inp" placeholder="Message CALMTECH..." onkeypress="if(event.key==='Enter')send()"><button id="btn" onclick="send()">Send</button></div>
+<div class="in-wrap"><input id="inp" placeholder="Ask anything or describe an image..." onkeypress="if(event.key==='Enter')send(false)"><button id="img-btn" onclick="send(true)">Image</button><button id="btn" onclick="send(false)">Send</button></div>
 <div class="foot"><span>CALMTECH AI</span><a class="share" href="https://whatsapp.com" target="_blank">Share on WhatsApp</a></div>
 </div>
 <script>
 let sid="u_"+Math.random().toString(36).slice(2,11);
-function resetChat(){sid="u_"+Math.random().toString(36).slice(2,11);document.getElementById("chat").innerHTML='<div class="welcome" id="w"><div class="w-title">How can I help you today?</div><div class="w-sub">New conversation started. Ask anything!</div></div>';}
-function ask(q){document.getElementById("inp").value=q;send();}
-function fmt(t){let s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");s=s.replace(/```([\s\(\S\)]*?)```/g,"<pre>$1</pre>");s=s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');s=s.replace(/(^|[\s(>])(https?:\/\/[^\s<)]+)/g,'$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');return s.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>");}
-async function send(){const i=document.getElementById("inp"),b=document.getElementById("btn"),c=document.getElementById("chat"),t=i.value.trim();if(!t||b.disabled)return;const w=document.getElementById("w");if(w)w.remove();i.disabled=b.disabled=true;c.innerHTML+=`<div class="row u"><div class="msg">${t.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</div></div>`;i.value="";const id="t"+Date.now();c.innerHTML+=`<div class="row b" id="${id}"><div class="msg th">Thinking...</div></div>`;c.scrollTop=c.scrollHeight;try{const r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:t,session_id:sid})});const d=await r.json();document.getElementById(id).innerHTML=`<div class="msg">${fmt(d.reply)}</div>`;}catch(e){document.getElementById(id).innerHTML=`<div class="msg">Error: ${e.message}</div>`;}i.disabled=b.disabled=false;i.focus();c.scrollTop=c.scrollHeight;}
+function resetChat(){sid="u_"+Math.random().toString(36).slice(2,11);document.getElementById("chat").innerHTML='<div class="welcome" id="w"><div class="w-title">How can I help you today?</div><div class="w-sub">New conversation started. Ask anything or create an image!</div></div>';}
+function ask(q){document.getElementById("inp").value=q;send(false);}
+function askImg(q){document.getElementById("inp").value=q;send(true);}
+function fmt(t){let s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");s=s.replace(/```([\s\S]*?)```/g,"<pre>$1</pre>");s=s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');s=s.replace(/(^|[\s(>])(https?:\/\/[^\s<)]+)/g,'$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');return s.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>");}
+async function send(makeImg){const i=document.getElementById("inp"),b=document.getElementById("btn"),ib=document.getElementById("img-btn"),c=document.getElementById("chat");let t=i.value.trim();if(!t||b.disabled)return;if(makeImg&&!t.toLowerCase().startsWith("/image"))t="/image "+t;const w=document.getElementById("w");if(w)w.remove();i.disabled=b.disabled=ib.disabled=true;c.innerHTML+=`<div class="row u"><div class="msg">${t.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</div></div>`;i.value="";const isImg=t.toLowerCase().startsWith("/image"),id="t"+Date.now();c.innerHTML+=`<div class="row b" id="${id}"><div class="msg th">${isImg?"Creating your image...":"Thinking..."}</div></div>`;c.scrollTop=c.scrollHeight;try{const r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:t,session_id:sid})});const d=await r.json();if(d.image_data){document.getElementById(id).innerHTML=`<div class="msg">${fmt(d.reply)}<img src="${d.image_data}" alt="Generated"><a class="dl" href="${d.image_data}" download="calmtech-image.png">Download Image</a></div>`;}else{document.getElementById(id).innerHTML=`<div class="msg">${fmt(d.reply)}</div>`;}}catch(e){document.getElementById(id).innerHTML=`<div class="msg">Error: ${e.message}</div>`;}i.disabled=b.disabled=ib.disabled=false;i.focus();c.scrollTop=c.scrollHeight;}
 </script>
 <script data-cfasync="false" src="https://bauval.org"></script>
 </body></html>"""
+
+def make_image(client, prompt):
+    for m in IMG_MODELS:
+        try:
+            res = client.models.generate_content(model=m, contents=prompt, config=types.GenerateContentConfig(response_modalities=["IMAGE"]))
+            for p in res.candidates[0].content.parts:
+                if p.inline_data is not None:
+                    b64 = base64.b64encode(p.inline_data.data).decode("utf-8")
+                    mime = p.inline_data.mime_type or "image/png"
+                    return f"data:{mime};base64,{b64}", f"Here is your image for: **{prompt}**"
+        except Exception:
+            continue
+    seed = random.randint(1, 999999)
+    enc = urllib.parse.quote(prompt)
+    for url in [f"https://pollinations.ai{enc}?width=512&height=512&seed={seed}&nologo=true&model=turbo", f"https://pollinations.ai{enc}?width=512&height=512&seed={seed}&nologo=true"]:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw = resp.read()
+                if len(raw) > 1000:
+                    return f"data:image/jpeg;base64,{base64.b64encode(raw).decode('utf-8')}", f"Here is your image for: **{prompt}**"
+        except Exception:
+            continue
+    return None, "Image servers are momentarily busy. Please try again in a few seconds."
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -80,31 +113,3 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/chat":
-            data = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
-            msg, sid = data.get("message", ""), data.get("session_id", "default")
-            hist = SESSIONS.setdefault(sid, [])[-12:]
-            hist.append(types.Content(role="user", parts=[types.Part.from_text(text=msg)]))
-            reply = "Servers are busy. Please try again in a moment."
-            try:
-                client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", "").strip())
-                for m in MODELS:
-                    try:
-                        res = client.models.generate_content(model=m, contents=hist, config=CFG)
-                        reply = res.text
-                        hist.append(types.Content(role="model", parts=[types.Part.from_text(text=reply)]))
-                        SESSIONS[sid] = hist
-                        break
-                    except Exception as e:
-                        if "503" in str(e) or "429" in str(e):
-                            continue
-                        reply = f"Connection error: {str(e)}"
-                        break
-            except Exception as e:
-                reply = f"Configuration error: {str(e)}"
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"reply": reply}).encode("utf-8"))
-
-port = int(os.environ.get("PORT", 8000))
-ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
