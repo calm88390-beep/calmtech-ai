@@ -5,8 +5,6 @@ import os
 from google import genai
 from google.genai import types
 
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
-
 CALMTECH_CONFIG = types.GenerateContentConfig(
     system_instruction=(
         "You are CALMTECH, a helpful AI assistant. NEVER introduce yourself, say your name, "
@@ -134,14 +132,14 @@ class CalmTechHandler(BaseHTTPRequestHandler):
             parts.append(types.Part.from_text(text=msg))
             hist.append(types.Content(role="user", parts=parts))
             reply = "Servers are busy. Please try again in a moment."
-            for m in MODELS:
-                try:
-                    res = client.models.generate_content(model=m, contents=hist, config=CALMTECH_CONFIG)
-                    reply = res.text
-                    hist[-1] = types.Content(role="user", parts=[types.Part.from_text(text=msg)])
-                    hist.append(types.Content(role="model", parts=[types.Part.from_text(text=reply)]))
-                    user_sessions[sid] = hist
-                    break
-                except Exception as e:
-                    if "503" in str(e) or "429" in str(e):
-                        continue
+            try:
+                client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", "").strip())
+                for m in MODELS:
+                    try:
+                        res = client.models.generate_content(model=m, contents=hist, config=CALMTECH_CONFIG)
+                        reply = res.text
+                        hist[-1] = types.Content(role="user", parts=[types.Part.from_text(text=msg)])
+                        hist.append(types.Content(role="model", parts=[types.Part.from_text(text=reply)]))
+                        user_sessions[sid] = hist
+                        break
+                    except Exception as e:
