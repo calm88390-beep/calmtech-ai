@@ -1,56 +1,333 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import base64, json, os, random, urllib.parse, urllib.request
+import base64
+import json
+import os
+import random
+import urllib.parse
+import urllib.request
 from google import genai
 from google.genai import types
 
-CFG = types.GenerateContentConfig(system_instruction="You are CALMTECH, a helpful AI assistant. NEVER introduce yourself, say your name, or mention your creator unless asked who created, built, or owns you. If asked who created, built, or owns you, state that you were created by Samuel Frimpong. Share full clickable URLs like https://example.com when helpful.")
+CFG = types.GenerateContentConfig(
+    system_instruction=(
+        "You are CALMTECH, a helpful AI assistant. NEVER introduce yourself, say your name, "
+        "or mention your creator unless asked who created, built, or owns you. "
+        "If asked who created, built, or owns you, state that you were created by Samuel Frimpong. "
+        "Share full clickable URLs like https://example.com when helpful."
+    )
+)
+
 MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"]
 IMG_MODELS = ["gemini-3.1-flash-lite-image", "gemini-3.1-flash-image"]
 SESS = {}
 
-HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>CALMTECH AI</title>
+HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>CALMTECH AI</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:radial-gradient(circle at top left,#1e1b4b,#090d16 55%,#06283d);color:#f8fafc;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(15,23,42,.85);border-bottom:1px solid rgba(139,92,246,.3)}.brand{font-size:22px;font-weight:900;letter-spacing:2px;background:linear-gradient(90deg,#38bdf8,#a855f7,#ec4899,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.nbtn{background:rgba(139,92,246,.25);color:#e0f2fe;border:1px solid rgba(139,92,246,.5);padding:6px 12px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;margin-left:6px}
-#hp{display:none;position:fixed;top:56px;right:14px;width:270px;max-height:65vh;overflow-y:auto;background:#131936;border:1px solid #8b5cf6;border-radius:16px;padding:12px;z-index:100}.hi{display:flex;justify-content:space-between;padding:8px 10px;margin-bottom:6px;background:#1e293b;border-radius:10px;cursor:pointer;font-size:13px}.hi.act{border:1px solid #38bdf8}
-.ad{background:rgba(9,13,22,.9);border-bottom:1px solid rgba(99,102,241,.25);min-height:58px;display:flex;align-items:center;justify-content:center;padding:4px}#chat{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:14px;max-width:820px;width:100%;margin:0 auto}
-.w{margin:auto;text-align:center;padding:20px}.wt{font-size:26px;font-weight:800;margin-bottom:8px;background:linear-gradient(90deg,#38bdf8,#c084fc,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.chip{display:inline-block;margin:4px;background:#1e293b;border:1px solid #8b5cf6;color:#e2e8f0;padding:8px 14px;border-radius:16px;font-size:13px;cursor:pointer}
-.row{display:flex;width:100%}.u{justify-content:flex-end}.b{justify-content:flex-start}.msg{padding:12px 16px;border-radius:18px;max-width:85%;line-height:1.55;font-size:15px;word-wrap:break-word;white-space:pre-wrap}.u .msg{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border-bottom-right-radius:4px}.b .msg{background:rgba(30,41,59,.88);color:#f1f5f9;border:1px solid rgba(148,163,184,.2);border-bottom-left-radius:4px}.b a{color:#38bdf8;font-weight:600;text-decoration:underline}.b img{max-width:100%;border-radius:12px;margin-top:8px;display:block}.dl{display:inline-block;margin-top:8px;color:#38bdf8;font-size:13px;font-weight:700;text-decoration:none}.th{color:#c084fc;font-style:italic}
-.bbar{background:rgba(15,23,42,.92);border-top:1px solid rgba(139,92,246,.3);padding:10px 14px 12px}.iw{max-width:820px;margin:0 auto;display:flex;gap:6px;background:#1e293b;padding:6px 8px 6px 16px;border-radius:28px;border:1px solid rgba(139,92,246,.5)}input{flex:1;background:transparent;border:none;color:#fff;font-size:15px;outline:none}#ibtn{background:linear-gradient(135deg,#ec4899,#8b5cf6);color:#fff;border:none;padding:10px 14px;border-radius:22px;font-weight:700;cursor:pointer}#btn{background:linear-gradient(135deg,#06b6d4,#6366f1);color:#fff;border:none;padding:10px 18px;border-radius:22px;font-weight:700;cursor:pointer}button:disabled{opacity:.45}
-.foot{max-width:820px;margin:8px auto 0;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#94a3b8}.share{background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:4px 12px;border-radius:12px;text-decoration:none;font-weight:700}
-</style></head><body>
-<header><div class="brand">CALMTECH</div><div><button class="nbtn" onclick="togH()">History</button><button class="nbtn" onclick="newC()">+ New Chat</button></div></header>
-<div id="hp"><div style="display:flex;justify-content:space-between;margin-bottom:8px;font-weight:700;color:#38bdf8"><span>Previous Chats</span><span style="cursor:pointer" onclick="togH()">✕</span></div><div id="hl"></div></div>
-<div class="ad"><script>atOptions={'key':'ed327d85d05c1d6a827737110edd99bb','format':'iframe','height':50,'width':320,'params':{}};</script><script src="https://bauval.org"></script></div>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: system-ui, sans-serif;
+    background: radial-gradient(circle at top left, #1e1b4b, #090d16 55%, #06283d);
+    color: #f8fafc;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: rgba(15, 23, 42, 0.85);
+    border-bottom: 1px solid rgba(139, 92, 246, 0.3);
+}
+.brand {
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    background: linear-gradient(90deg, #38bdf8, #a855f7, #ec4899, #f59e0b);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.nbtn {
+    background: rgba(139, 92, 246, 0.25);
+    color: #e0f2fe;
+    border: 1px solid rgba(139, 92, 246, 0.5);
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 6px;
+}
+#hp {
+    display: none;
+    position: fixed;
+    top: 56px;
+    right: 14px;
+    width: 270px;
+    max-height: 65vh;
+    overflow-y: auto;
+    background: #131936;
+    border: 1px solid #8b5cf6;
+    border-radius: 16px;
+    padding: 12px;
+    z-index: 100;
+}
+.hi {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    background: #1e293b;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.hi.act { border: 1px solid #38bdf8; }
+.ad {
+    background: rgba(9, 13, 22, 0.9);
+    border-bottom: 1px solid rgba(99, 102, 241, 0.25);
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+}
+#chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 820px;
+    width: 100%;
+    margin: 0 auto;
+}
+.w { margin: auto; text-align: center; padding: 20px; }
+.wt {
+    font-size: 26px;
+    font-weight: 800;
+    margin-bottom: 8px;
+    background: linear-gradient(90deg, #38bdf8, #c084fc, #f472b6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.chip {
+    display: inline-block;
+    margin: 4px;
+    background: #1e293b;
+    border: 1px solid #8b5cf6;
+    color: #e2e8f0;
+    padding: 8px 14px;
+    border-radius: 16px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.row { display: flex; width: 100%; }
+.u { justify-content: flex-end; }
+.b { justify-content: flex-start; }
+.msg {
+    padding: 12px 16px;
+    border-radius: 18px;
+    max-width: 85%;
+    line-height: 1.55;
+    font-size: 15px;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+}
+.u .msg {
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+}
+.b .msg {
+    background: rgba(30, 41, 59, 0.88);
+    color: #f1f5f9;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-bottom-left-radius: 4px;
+}
+.b a { color: #38bdf8; font-weight: 600; text-decoration: underline; }
+.b img { max-width: 100%; border-radius: 12px; margin-top: 8px; display: block; }
+.dl { display: inline-block; margin-top: 8px; color: #38bdf8; font-size: 13px; font-weight: 700; text-decoration: none; }
+.th { color: #c084fc; font-style: italic; }
+.bbar {
+    background: rgba(15, 23, 42, 0.92);
+    border-top: 1px solid rgba(139, 92, 246, 0.3);
+    padding: 10px 14px 12px;
+}
+.iw {
+    max-width: 820px;
+    margin: 0 auto;
+    display: flex;
+    gap: 6px;
+    background: #1e293b;
+    padding: 6px 8px 6px 16px;
+    border-radius: 28px;
+    border: 1px solid rgba(139, 92, 246, 0.5);
+}
+input { flex: 1; background: transparent; border: none; color: #fff; font-size: 15px; outline: none; }
+#ibtn {
+    background: linear-gradient(135deg, #ec4899, #8b5cf6);
+    color: #fff;
+    border: none;
+    padding: 10px 14px;
+    border-radius: 22px;
+    font-weight: 700;
+    cursor: pointer;
+}
+#btn {
+    background: linear-gradient(135deg, #06b6d4, #6366f1);
+    color: #fff;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 22px;
+    font-weight: 700;
+    cursor: pointer;
+}
+button:disabled { opacity: 0.45; }
+.foot {
+    max-width: 820px;
+    margin: 8px auto 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: #94a3b8;
+}
+.share {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 700;
+}
+</style>
+</head>
+<body>
+<header>
+    <div class="brand">CALMTECH</div>
+    <div>
+        <button class="nbtn" onclick="togH()">History</button>
+        <button class="nbtn" onclick="newC()">+ New Chat</button>
+    </div>
+</header>
+<div id="hp">
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-weight:700;color:#38bdf8">
+        <span>Previous Chats</span>
+        <span style="cursor:pointer" onclick="togH()">✕</span>
+    </div>
+    <div id="hl"></div>
+</div>
+<div class="ad">
+    <script>
+      atOptions = {
+        'key' : 'ed327d85d05c1d6a827737110edd99bb',
+        'format' : 'iframe',
+        'height' : 50,
+        'width' : 320,
+        'params' : {}
+      };
+    </script>
+    <script src="https://bauval.org"></script>
+</div>
 <div id="chat"></div>
-<div class="bbar"><div class="iw"><input id="inp" placeholder="Ask anything or describe an image..." onkeypress="if(event.key==='Enter')send(false)"><button id="ibtn" onclick="send(true)">Image</button><button id="btn" onclick="send(false)">Send</button></div>
-<div class="foot"><span>CALMTECH AI</span><a class="share" href="https://whatsapp.com" target="_blank">Share on WhatsApp</a></div></div>
+<div class="bbar">
+    <div class="iw">
+        <input id="inp" placeholder="Ask anything or describe an image..." onkeypress="if(event.key==='Enter')send(false)">
+        <button id="ibtn" onclick="send(true)">Image</button>
+        <button id="btn" onclick="send(false)">Send</button>
+    </div>
+    <div class="foot">
+        <span>CALMTECH AI</span>
+        <a class="share" href="https://whatsapp.com" target="_blank">Share on WhatsApp</a>
+    </div>
+</div>
 <script>
-let chats=JSON.parse(localStorage.getItem("ct_chats")||"{}"),sid="u_"+Math.random().toString(36).slice(2,10);
-function save(){localStorage.setItem("ct_chats",JSON.stringify(chats));renH();}
-function togH(){const p=document.getElementById("hp");p.style.display=p.style.display==="block"?"none":"block";renH();}
-function renH(){const l=document.getElementById("hl"),ids=Object.keys(chats).reverse();l.innerHTML=ids.length?ids.map(id=>`<div class="hi ${id===sid?'act':''}" onclick="loadC('${id}')"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(chats[id].t||'Chat')}</span><span style="color:#f87171;margin-left:8px" onclick="delC(event,'${id}')">×</span></div>`).join(""):'<div style="color:#94a3b8;font-size:13px">No saved chats yet.</div>';}
-function loadC(id){sid=id;document.getElementById("hp").style.display="none";const b=document.getElementById("chat");b.innerHTML="";(chats[id]?.m||[]).forEach(x=>{b.innerHTML+=x.r==="u"?`<div class="row u"><div class="msg">${esc(x.t)}</div></div>`:`<div class="row b"><div class="msg">${fmt(x.t)}</div></div>`;});b.scrollTop=b.scrollHeight;}
-function delC(e,id){e.stopPropagation();delete chats[id];save();if(id===sid)newC();}
-function newC(){sid="u_"+Math.random().toString(36).slice(2,10);document.getElementById("hp").style.display="none";document.getElementById("chat").innerHTML='<div class="w" id="w"><div class="wt">How can I help you today?</div><div style="color:#94a3b8;font-size:15px;margin-bottom:14px">Ask anything or describe a picture and tap Image!</div><div><span class="chip" onclick="ask(\'Give me 5 profitable online business ideas in Ghana\',false)">Business Ideas</span><span class="chip" onclick="ask(\'A futuristic sports car in Accra at sunset, realistic photo\',true)">Create Car Image</span><span class="chip" onclick="ask(\'Give me useful websites for learning free skills\',false)">Useful Links</span></div></div>';}
-function ask(q,img){document.getElementById("inp").value=q;send(img);}
-function esc(t){return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-function fmt(t){return esc(t).split(/(\s+)/).map(w=>w.startsWith("http://")||w.startsWith("https://")?`<a href="${w}" target="_blank">${w}</a>`:w).join("");}
-async function send(mkImg){const i=document.getElementById("inp"),b=document.getElementById("btn"),ib=document.getElementById("ibtn"),c=document.getElementById("chat");let t=i.value.trim();if(!t||b.disabled)return;if(mkImg&&!t.toLowerCase().startsWith("/image"))t="/image "+t;const w=document.getElementById("w");if(w)w.remove();if(!chats[sid])chats[sid]={t:t.slice(0,32),m:[]};chats[sid].m.push({r:"u",t:t});save();i.disabled=b.disabled=ib.disabled=true;c.innerHTML+=`<div class="row u"><div class="msg">${esc(t)}</div></div>`;i.value="";const isImg=t.toLowerCase().startsWith("/image"),id="t"+Date.now();c.innerHTML+=`<div class="row b" id="${id}"><div class="msg th">${isImg?"Creating your image...":"Thinking..."}</div></div>`;c.scrollTop=c.scrollHeight;try{const r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:t,session_id:sid})});const d=await r.json();chats[sid].m.push({r:"b",t:d.reply});save();document.getElementById(id).innerHTML=d.img?`<div class="msg">${fmt(d.reply)}<img src="${d.img}"><a class="dl" href="${d.img}" download="calmtech-image.png">Download Image</a></div>`:`<div class="msg">${fmt(d.reply)}</div>`;}catch(e){document.getElementById(id).innerHTML=`<div class="msg">Error: ${esc(e.message)}</div>`;}i.disabled=b.disabled=ib.disabled=false;i.focus();c.scrollTop=c.scrollHeight;}
-newC();
-</script>
-<script data-cfasync="false" src="https://bauval.org"></script>
-</body></html>"""
+let chats = JSON.parse(localStorage.getItem("ct_chats") || "{}");
+let sid = "u_" + Math.random().toString(36).slice(2, 10);
 
-def gen_img(client, prompt):
-    for m in IMG_MODELS:
-        try:
-            res = client.models.generate_content(model=m, contents=prompt, config=types.GenerateContentConfig(response_modalities=["IMAGE"]))
-            for p in res.candidates[0].content.parts:
-                if p.inline_data:
-                    return f"data:{p.inline_data.mime_type or 'image/png'};base64,{base64.b64encode(p.inline_data.data).decode()}"
-        except Exception:
-            pass
-    url = f"https://pollinations.ai{urllib.parse.quote(prompt)}?width=512&height=512&seed={random.randint(1,99999)}&nologo=true"
-    try:
+function save() {
+    localStorage.setItem("ct_chats", JSON.stringify(chats));
+    renH();
+}
+
+function togH() {
+    const p = document.getElementById("hp");
+    p.style.display = p.style.display === "block" ? "none" : "block";
+    renH();
+}
+
+function renH() {
+    const l = document.getElementById("hl");
+    const ids = Object.keys(chats).reverse();
+    l.innerHTML = ids.length ? ids.map(function(id) {
+        return '<div class="hi ' + (id === sid ? 'act' : '') + '" onclick="loadC(\'' + id + '\')">' +
+            '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + esc(chats[id].t || 'Chat') + '</span>' +
+            '<span style="color:#f87171;margin-left:8px" onclick="delC(event,\'' + id + '\')">×</span></div>';
+    }).join("") : '<div style="color:#94a3b8;font-size:13px">No saved chats yet.</div>';
+}
+
+function loadC(id) {
+    sid = id;
+    document.getElementById("hp").style.display = "none";
+    const b = document.getElementById("chat");
+    b.innerHTML = "";
+    const list = (chats[id] && chats[id].m) ? chats[id].m : [];
+    list.forEach(function(x) {
+        b.innerHTML += x.r === "u"
+            ? '<div class="row u"><div class="msg">' + esc(x.t) + '</div></div>'
+            : '<div class="row b"><div class="msg">' + fmt(x.t) + '</div></div>';
+    });
+    b.scrollTop = b.scrollHeight;
+}
+
+function delC(e, id) {
+    e.stopPropagation();
+    delete chats[id];
+    save();
+    if (id === sid) newC();
+}
+
+function newC() {
+    sid = "u_" + Math.random().toString(36).slice(2, 10);
+    document.getElementById("hp").style.display = "none";
+    document.getElementById("chat").innerHTML =
+        '<div class="w" id="w"><div class="wt">How can I help you today?</div>' +
+        '<div style="color:#94a3b8;font-size:15px;margin-bottom:14px">Ask anything or describe a picture and tap Image!</div>' +
+        '<div><span class="chip" onclick="ask(\'Give me 5 profitable online business ideas in Ghana\',false)">Business Ideas</span>' +
+        '<span class="chip" onclick="ask(\'A futuristic sports car in Accra at sunset, realistic photo\',true)">Create Car Image</span>' +
+        '<span class="chip" onclick="ask(\'Give me useful websites for learning free skills\',false)">Useful Links</span></div></div>';
+}
+
+function ask(q, img) {
+    document.getElementById("inp").value = q;
+    send(img);
+}
+
+function esc(t) {
+    return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function fmt(t) {
+    return esc(t).split(/(\s+)/).map(function(w) {
+        return (w.startsWith("http://") || w.startsWith("https://"))
+            ? '<a href="' + w + '" target="_blank">' + w + '</a>'
+            : w;
+    }).join("");
+}
+
+async function send(mkImg) {
+    const i = document.getElementById("inp");
+    const b = document.getElementById("btn");
+    const ib = document.getElementById("ibtn");
+    const c = document.getElementById("chat");
+    let t = i.value.trim();
+    if (!t || b.disabled) return;
