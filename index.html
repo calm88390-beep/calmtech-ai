@@ -10,15 +10,6 @@ body{font-family:system-ui,sans-serif;background:radial-gradient(circle at top l
 header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(15,23,42,.85);border-bottom:1px solid rgba(139,92,246,.3)}
 .brand{font-size:22px;font-weight:900;letter-spacing:2px;background:linear-gradient(90deg,#38bdf8,#a855f7,#ec4899,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .nbtn{background:rgba(139,92,246,.25);color:#e0f2fe;border:1px solid rgba(139,92,246,.5);padding:6px 12px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;margin-left:6px}
-#auth{position:fixed;inset:0;background:radial-gradient(circle at top,#1e1b4b,#090d16 70%);display:flex;align-items:center;justify-content:center;padding:16px;z-index:200}
-.acard{width:100%;max-width:380px;background:rgba(15,23,42,.95);border:1px solid rgba(139,92,246,.5);border-radius:22px;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,.7);text-align:center}
-.atabs{display:flex;gap:8px;margin:16px 0}
-.atab{flex:1;padding:9px;border-radius:14px;border:1px solid rgba(139,92,246,.4);background:#1e293b;color:#cbd5e1;font-weight:700;cursor:pointer}
-.atab.on{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border-color:transparent}
-.ainp{width:100%;padding:12px 14px;margin-bottom:10px;border-radius:14px;border:1px solid rgba(139,92,246,.45);background:#1e293b;color:#fff;font-size:14px;outline:none}
-.abtn{width:100%;padding:12px;border:none;border-radius:16px;background:linear-gradient(135deg,#06b6d4,#6366f1);color:#fff;font-weight:800;font-size:15px;cursor:pointer;margin-top:4px}
-.guest{margin-top:12px;font-size:13px;color:#38bdf8;cursor:pointer;text-decoration:underline;display:inline-block}
-#aerr{color:#f87171;font-size:13px;margin-bottom:8px;min-height:18px}
 #hp{display:none;position:fixed;top:56px;right:14px;width:270px;max-height:68vh;overflow-y:auto;background:#131936;border:1px solid #8b5cf6;border-radius:16px;padding:12px;z-index:100}
 .hi{display:flex;justify-content:space-between;padding:8px 10px;margin-bottom:6px;background:#1e293b;border-radius:10px;cursor:pointer;font-size:13px}
 .hi.act{border:1px solid #38bdf8}
@@ -46,27 +37,9 @@ button:disabled{opacity:.45}
 </style>
 </head>
 <body>
-<div id="auth">
-  <div class="acard">
-    <div class="brand" style="font-size:28px">CALMTECH</div>
-    <p style="color:#94a3b8;font-size:13px;margin-top:4px">Create an account or log in to continue</p>
-    <div class="atabs">
-      <button type="button" id="t-in" class="atab on" onclick="setMode('in')">Log In</button>
-      <button type="button" id="t-up" class="atab" onclick="setMode('up')">Sign Up</button>
-    </div>
-    <div id="aerr"></div>
-    <input id="aname" class="ainp" placeholder="Full Name" style="display:none">
-    <input id="aemail" class="ainp" type="email" placeholder="Email Address">
-    <input id="apass" class="ainp" type="password" placeholder="Password" onkeypress="if(event.key==='Enter')doAuth()">
-    <button type="button" id="asub" class="abtn" onclick="doAuth()">Log In</button>
-    <div class="guest" onclick="useGuest()">Continue without account</div>
-  </div>
-</div>
-
 <header>
   <div class="brand">CALMTECH</div>
   <div>
-    <span id="uname" style="font-size:12px;color:#38bdf8;margin-right:4px"></span>
     <button type="button" class="nbtn" onclick="togH()">History</button>
     <button type="button" class="nbtn" onclick="newC()">+ New Chat</button>
   </div>
@@ -78,7 +51,6 @@ button:disabled{opacity:.45}
     <span style="cursor:pointer" onclick="togH()">✕</span>
   </div>
   <div id="hl"></div>
-  <button type="button" onclick="logout()" style="width:100%;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #f87171;background:rgba(239,68,68,.15);color:#fca5a5;font-weight:700;cursor:pointer">Log Out / Switch Account</button>
 </div>
 
 <div class="ad">
@@ -108,59 +80,123 @@ button:disabled{opacity:.45}
 </div>
 
 <script>
-let mode = "in";
-let curUser = localStorage.getItem("ct_active") || "";
-let curName = localStorage.getItem("ct_name") || "";
-let chats = {};
+let chats = JSON.parse(localStorage.getItem("ct_chats") || "{}");
 let sid = "u_" + Math.random().toString(36).slice(2, 10);
 let upImg = null;
 
-function setMode(m) {
-  mode = m;
-  document.getElementById("aerr").textContent = "";
-  document.getElementById("t-in").className = "atab" + (m === "in" ? " on" : "");
-  document.getElementById("t-up").className = "atab" + (m === "up" ? " on" : "");
-  document.getElementById("aname").style.display = m === "up" ? "block" : "none";
-  document.getElementById("asub").textContent = m === "up" ? "Create Account" : "Log In";
+function pickImg(e) {
+  const f = e.target.files && e.target.files;
+  if (!f) return;
+  if (f.size > 10 * 1024 * 1024) { alert("Please pick an image under 10 MB."); e.target.value = ""; return; }
+  const r = new FileReader();
+  r.onload = function(ev) {
+    const d = ev.target.result;
+    upImg = { mime: f.type, data: d.split(","), url: d };
+    document.getElementById("plbl").textContent = "Attached: " + f.name;
+    document.getElementById("pbar").style.display = "flex";
+  };
+  r.readAsDataURL(f);
 }
 
-async function doAuth() {
-  const em = document.getElementById("aemail").value.trim().toLowerCase();
-  const pw = document.getElementById("apass").value;
-  const nm = document.getElementById("aname").value.trim();
-  const err = document.getElementById("aerr");
-  const btn = document.getElementById("asub");
-  if (!em || !pw) { err.textContent = "Please enter email and password."; return; }
-  if (mode === "up" && !nm) { err.textContent = "Please enter your full name."; return; }
-  btn.disabled = true;
-  err.style.color = "#38bdf8";
-  err.textContent = mode === "up" ? "Creating account..." : "Logging in...";
+function clrImg() {
+  upImg = null;
+  document.getElementById("fin").value = "";
+  document.getElementById("pbar").style.display = "none";
+}
+
+function save() {
+  localStorage.setItem("ct_chats", JSON.stringify(chats));
+  renH();
+}
+
+function togH() {
+  const p = document.getElementById("hp");
+  p.style.display = p.style.display === "block" ? "none" : "block";
+  renH();
+}
+
+function renH() {
+  const l = document.getElementById("hl");
+  const ids = Object.keys(chats).reverse();
+  l.innerHTML = ids.length ? ids.map(function(id) {
+    return '<div class="hi ' + (id === sid ? 'act' : '') + '" onclick="loadC(\'' + id + '\')">' +
+      '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + esc(chats[id].t || 'Chat') + '</span>' +
+      '<span style="color:#f87171;margin-left:8px" onclick="delC(event,\'' + id + '\')">×</span></div>';
+  }).join("") : '<div style="color:#94a3b8;font-size:13px">No saved chats yet.</div>';
+}
+
+function loadC(id) {
+  sid = id;
+  document.getElementById("hp").style.display = "none";
+  const b = document.getElementById("chat");
+  b.innerHTML = "";
+  const list = (chats[id] && chats[id].m) ? chats[id].m : [];
+  list.forEach(function(x) {
+    b.innerHTML += x.r === "u"
+      ? '<div class="row u"><div class="msg">' + esc(x.t) + '</div></div>'
+      : '<div class="row b"><div class="msg">' + fmt(x.t) + '</div></div>';
+  });
+  b.scrollTop = b.scrollHeight;
+}
+
+function delC(e, id) {
+  e.stopPropagation();
+  delete chats[id];
+  save();
+  if (id === sid) newC();
+}
+
+function newC() {
+  sid = "u_" + Math.random().toString(36).slice(2, 10);
+  clrImg();
+  document.getElementById("hp").style.display = "none";
+  document.getElementById("chat").innerHTML =
+    '<div class="w" id="w"><div class="wt">How can I help you today?</div>' +
+    '<div style="color:#94a3b8;font-size:15px;margin-bottom:14px">Tap + to upload a photo or ask anything!</div>' +
+    '<div><span class="chip" onclick="ask(\'Who is the current President of Ghana?\')">President of Ghana</span>' +
+    '<span class="chip" onclick="ask(\'Give me 5 profitable online business ideas in Ghana\')">Business Ideas</span>' +
+    '<span class="chip" onclick="ask(\'Give me useful websites for learning free skills\')">Useful Links</span></div></div>';
+}
+
+function ask(q) {
+  document.getElementById("inp").value = q;
+  send();
+}
+
+function esc(t) {
+  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function fmt(t) {
+  return esc(t).split(/(\s+)/).map(function(w) {
+    return (w.startsWith("http://") || w.startsWith("https://"))
+      ? '<a href="' + w + '" target="_blank">' + w + '</a>'
+      : w;
+  }).join("");
+}
+
+async function send() {
+  const i = document.getElementById("inp");
+  const b = document.getElementById("btn");
+  const pb = document.getElementById("pbtn");
+  const c = document.getElementById("chat");
+  const t = i.value.trim();
+  if ((!t && !upImg) || b.disabled) return;
+  const w = document.getElementById("w");
+  if (w) w.remove();
+  const label = t || (upImg ? "Analyze this image" : "");
+  if (!chats[sid]) chats[sid] = { t: label.slice(0, 32), m: [] };
+  chats[sid].m.push({ r: "u", t: label });
+  save();
+  i.disabled = b.disabled = pb.disabled = true;
+  c.innerHTML += '<div class="row u"><div class="msg">' + (upImg ? '<img src="' + upImg.url + '">' : '') + esc(label) + '</div></div>';
+  const mediaSend = upImg ? { mime: upImg.mime, data: upImg.data } : null;
+  i.value = "";
+  clrImg();
+  const id = "t" + Date.now();
+  c.innerHTML += '<div class="row b" id="' + id + '"><div class="msg th">' + (mediaSend ? "Analyzing your photo..." : "Thinking...") + '</div></div>';
+  c.scrollTop = c.scrollHeight;
   try {
-    const r = await fetch("/auth", {
+    const r = await fetch("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: mode, email: em, pass: pw, name: nm })
-    });
-    const d = await r.json();
-    if (!d.ok) {
-      err.style.color = "#f87171";
-      err.textContent = d.msg;
-      btn.disabled = false;
-      return;
-    }
-    curUser = d.email;
-    curName = d.name;
-    localStorage.setItem("ct_active", curUser);
-    localStorage.setItem("ct_name", curName);
-    btn.disabled = false;
-    startApp();
-  } catch (e) {
-    err.style.color = "#f87171";
-    err.textContent = "Network error. Please try again.";
-    btn.disabled = false;
-  }
-}
-
-function useGuest() {
-  curUser = "guest";
-  curName = "Guest";
