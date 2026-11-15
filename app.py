@@ -16,6 +16,7 @@ CFG = types.GenerateContentConfig(
 )
 MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"]
 SESS = {}
+USERS = {}
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -27,8 +28,36 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(html)
 
     def do_POST(self):
+        length = int(self.headers["Content-Length"])
+        d = json.loads(self.rfile.read(length).decode("utf-8"))
+
+        if self.path == "/auth":
+            mode = d.get("mode", "in")
+            em = d.get("email", "").strip().lower()
+            pw = d.get("pass", "")
+            nm = d.get("name", "").strip()
+            if not em or not pw:
+                out = {"ok": False, "msg": "Please enter both email and password."}
+            elif mode == "up":
+                if not nm:
+                    out = {"ok": False, "msg": "Please enter your full name."}
+                elif em in USERS:
+                    out = {"ok": False, "msg": "Email already registered. Please Log In."}
+                else:
+                    USERS[em] = {"name": nm, "pass": pw}
+                    out = {"ok": True, "name": nm, "email": em}
+            else:
+                if em not in USERS or USERS[em]["pass"] != pw:
+                    out = {"ok": False, "msg": "Invalid email or password. Try Sign Up first!"}
+                else:
+                    out = {"ok": True, "name": USERS[em]["name"], "email": em}
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(out).encode("utf-8"))
+            return
+
         if self.path == "/chat":
-            d = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
             msg, sid, media = d.get("message", ""), d.get("session_id", "default"), d.get("media")
             try:
                 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", "").strip())
