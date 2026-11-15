@@ -110,7 +110,7 @@ function clrImg() {
 }
 
 function pickImg(e) {
-  var f = e.target.files && e.target.files;
+  var f = e.target.files && e.target.files[0];
   if (!f) return;
   if (f.size > 10 * 1024 * 1024) {
     alert("Please pick an image under 10 MB.");
@@ -120,7 +120,7 @@ function pickImg(e) {
   var r = new FileReader();
   r.onload = function(ev) {
     var d = ev.target.result;
-    upImg = { mime: f.type, data: d.split(","), url: d };
+    upImg = { mime: f.type, data: d.split(",")[1], url: d };
     document.getElementById("plbl").textContent = "Attached: " + f.name;
     document.getElementById("pbar").style.display = "flex";
   };
