@@ -49,16 +49,16 @@ button:disabled{opacity:.45}
 <div id="auth">
   <div class="acard">
     <div class="brand" style="font-size:28px">CALMTECH</div>
-    <p style="color:#94a3b8;font-size:13px;margin-top:4px">Sign in to save your chats across sessions</p>
+    <p style="color:#94a3b8;font-size:13px;margin-top:4px">Create an account or log in to continue</p>
     <div class="atabs">
-      <button id="t-in" class="atab on" onclick="setMode('in')">Log In</button>
-      <button id="t-up" class="atab" onclick="setMode('up')">Sign Up</button>
+      <button type="button" id="t-in" class="atab on" onclick="setMode('in')">Log In</button>
+      <button type="button" id="t-up" class="atab" onclick="setMode('up')">Sign Up</button>
     </div>
     <div id="aerr"></div>
     <input id="aname" class="ainp" placeholder="Full Name" style="display:none">
     <input id="aemail" class="ainp" type="email" placeholder="Email Address">
     <input id="apass" class="ainp" type="password" placeholder="Password" onkeypress="if(event.key==='Enter')doAuth()">
-    <button id="asub" class="abtn" onclick="doAuth()">Log In</button>
+    <button type="button" id="asub" class="abtn" onclick="doAuth()">Log In</button>
     <div class="guest" onclick="useGuest()">Continue without account</div>
   </div>
 </div>
@@ -67,8 +67,8 @@ button:disabled{opacity:.45}
   <div class="brand">CALMTECH</div>
   <div>
     <span id="uname" style="font-size:12px;color:#38bdf8;margin-right:4px"></span>
-    <button class="nbtn" onclick="togH()">History</button>
-    <button class="nbtn" onclick="newC()">+ New Chat</button>
+    <button type="button" class="nbtn" onclick="togH()">History</button>
+    <button type="button" class="nbtn" onclick="newC()">+ New Chat</button>
   </div>
 </header>
 
@@ -78,7 +78,7 @@ button:disabled{opacity:.45}
     <span style="cursor:pointer" onclick="togH()">✕</span>
   </div>
   <div id="hl"></div>
-  <button onclick="logout()" style="width:100%;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #f87171;background:rgba(239,68,68,.15);color:#fca5a5;font-weight:700;cursor:pointer">Log Out / Switch Account</button>
+  <button type="button" onclick="logout()" style="width:100%;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #f87171;background:rgba(239,68,68,.15);color:#fca5a5;font-weight:700;cursor:pointer">Log Out / Switch Account</button>
 </div>
 
 <div class="ad">
@@ -97,9 +97,9 @@ button:disabled{opacity:.45}
   </div>
   <div class="iw">
     <input type="file" id="fin" accept="image/*" style="display:none" onchange="pickImg(event)">
-    <button id="pbtn" title="Upload image" onclick="document.getElementById('fin').click()">+</button>
+    <button type="button" id="pbtn" title="Upload image" onclick="document.getElementById('fin').click()">+</button>
     <input type="text" id="inp" placeholder="Ask anything or upload a photo..." onkeypress="if(event.key==='Enter')send()">
-    <button id="btn" onclick="send()">Send</button>
+    <button type="button" id="btn" onclick="send()">Send</button>
   </div>
   <div class="foot">
     <span>CALMTECH AI</span>
@@ -110,6 +110,7 @@ button:disabled{opacity:.45}
 <script>
 let mode = "in";
 let curUser = localStorage.getItem("ct_active") || "";
+let curName = localStorage.getItem("ct_name") || "";
 let chats = {};
 let sid = "u_" + Math.random().toString(36).slice(2, 10);
 let upImg = null;
@@ -123,45 +124,43 @@ function setMode(m) {
   document.getElementById("asub").textContent = m === "up" ? "Create Account" : "Log In";
 }
 
-function doAuth() {
-  const users = JSON.parse(localStorage.getItem("ct_users") || "{}");
+async function doAuth() {
   const em = document.getElementById("aemail").value.trim().toLowerCase();
   const pw = document.getElementById("apass").value;
   const nm = document.getElementById("aname").value.trim();
   const err = document.getElementById("aerr");
+  const btn = document.getElementById("asub");
   if (!em || !pw) { err.textContent = "Please enter email and password."; return; }
-  if (mode === "up") {
-    if (!nm) { err.textContent = "Please enter your name."; return; }
-    if (users[em]) { err.textContent = "Account already exists. Please log in."; return; }
-    users[em] = { name: nm, pass: pw };
-    localStorage.setItem("ct_users", JSON.stringify(users));
-  } else {
-    if (!users[em] || users[em].pass !== pw) { err.textContent = "Invalid email or password."; return; }
+  if (mode === "up" && !nm) { err.textContent = "Please enter your full name."; return; }
+  btn.disabled = true;
+  err.style.color = "#38bdf8";
+  err.textContent = mode === "up" ? "Creating account..." : "Logging in...";
+  try {
+    const r = await fetch("/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: mode, email: em, pass: pw, name: nm })
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      err.style.color = "#f87171";
+      err.textContent = d.msg;
+      btn.disabled = false;
+      return;
+    }
+    curUser = d.email;
+    curName = d.name;
+    localStorage.setItem("ct_active", curUser);
+    localStorage.setItem("ct_name", curName);
+    btn.disabled = false;
+    startApp();
+  } catch (e) {
+    err.style.color = "#f87171";
+    err.textContent = "Network error. Please try again.";
+    btn.disabled = false;
   }
-  curUser = em;
-  localStorage.setItem("ct_active", em);
-  startApp();
 }
 
 function useGuest() {
   curUser = "guest";
-  localStorage.setItem("ct_active", "guest");
-  startApp();
-}
-
-function logout() {
-  localStorage.removeItem("ct_active");
-  curUser = "";
-  document.getElementById("hp").style.display = "none";
-  document.getElementById("auth").style.display = "flex";
-}
-
-function startApp() {
-  const users = JSON.parse(localStorage.getItem("ct_users") || "{}");
-  document.getElementById("auth").style.display = "none";
-  document.getElementById("uname").textContent = curUser === "guest" ? "Guest" : (users[curUser]?.name || "");
-  chats = JSON.parse(localStorage.getItem("ct_chats_" + curUser) || "{}");
-  newC();
-}
-
-function pickImg(e) {
+  curName = "Guest";
