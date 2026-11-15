@@ -4,7 +4,6 @@ import json
 import os
 import random
 import urllib.parse
-import urllib.request
 from google import genai
 from google.genai import types
 
@@ -18,7 +17,6 @@ CFG = types.GenerateContentConfig(
     )
 )
 MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"]
-IMG_MODELS = ["gemini-3.1-flash-lite-image", "gemini-3.1-flash-image"]
 SESS = {}
 
 def is_img_req(text):
@@ -33,12 +31,13 @@ def gen_img(client, prompt):
             clean = clean[len(prefix):].strip()
             break
     clean = clean or prompt
-    for m in IMG_MODELS:
+
+    for m in ["gemini-2.0-flash-exp", "gemini-2.0-flash-preview-image-generation", "gemini-3.1-flash-lite-image"]:
         try:
             res = client.models.generate_content(
                 model=m,
-                contents=clean,
-                config=types.GenerateContentConfig(response_modalities=["IMAGE"])
+                contents="Generate an image of: " + clean,
+                config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"])
             )
             if res.candidates and res.candidates.content:
                 for p in res.candidates.content.parts:
@@ -48,16 +47,23 @@ def gen_img(client, prompt):
                         return "data:" + mime + ";base64," + b64, clean
         except Exception:
             continue
-    url = "https://pollinations.ai" + urllib.parse.quote(clean) + "?width=512&height=512&seed=" + str(random.randint(1, 99999)) + "&nologo=true"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            raw = r.read()
-            if len(raw) > 1000:
-                return "data:image/jpeg;base64," + base64.b64encode(raw).decode("utf-8"), clean
-    except Exception:
-        pass
-    return None, clean
+
+    for im in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
+        try:
+            res = client.models.generate_images(
+                model=im,
+                prompt=clean,
+                config=types.GenerateImagesConfig(number_of_images=1)
+            )
+            if res.generated_images:
+                img_bytes = res.generated_images.image.image_bytes
+                b64 = base64.b64encode(img_bytes).decode("utf-8")
+                return "data:image/png;base64," + b64, clean
+        except Exception:
+            continue
+
+    direct_url = "https://pollinations.ai" + urllib.parse.quote(clean) + "?width=512&height=512&seed=" + str(random.randint(1, 999999)) + "&nologo=true"
+    return direct_url, clean
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -76,10 +82,7 @@ class H(BaseHTTPRequestHandler):
                 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", "").strip())
                 if not media and is_img_req(msg):
                     img_url, clean_pr = gen_img(client, msg)
-                    if img_url:
-                        out = {"reply": "Here is your image for: " + clean_pr, "img": img_url}
-                    else:
-                        out = {"reply": "Image servers are momentarily busy. Please try again in a few seconds."}
+                    out = {"reply": "Here is your image for: " + clean_pr, "img": img_url}
                 else:
                     hist = SESS.setdefault(sid, [])[-10:]
                     parts = [types.Part.from_bytes(data=base64.b64decode(media["data"]), mime_type=media["mime"])] if media else []
