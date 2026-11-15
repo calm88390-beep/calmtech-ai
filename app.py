@@ -1,10 +1,6 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import base64
 import json
 import os
-import random
-import urllib.parse
-import urllib.request
 from google import genai
 from google.genai import types
 
@@ -17,8 +13,7 @@ CFG = types.GenerateContentConfig(
     )
 )
 
-TEXT_MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"]
-IMG_MODELS = ["gemini-3.1-flash-lite-image", "gemini-3.1-flash-image"]
+MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"]
 SESSIONS = {}
 
 HTML = r"""<!DOCTYPE html>
@@ -54,16 +49,18 @@ header {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
-.new-btn {
+.hdr-btns { display: flex; gap: 8px; }
+.nav-btn {
     background: rgba(139, 92, 246, 0.25);
     color: #e0f2fe;
     border: 1px solid rgba(139, 92, 246, 0.5);
-    padding: 6px 14px;
+    padding: 6px 13px;
     border-radius: 20px;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
 }
+.nav-btn:hover { background: rgba(139, 92, 246, 0.45); }
 .ad-banner {
     background: rgba(9, 13, 22, 0.9);
     border-bottom: 1px solid rgba(99, 102, 241, 0.25);
@@ -73,6 +70,45 @@ header {
     justify-content: center;
     padding: 4px;
 }
+#history-panel {
+    display: none;
+    position: fixed;
+    top: 56px;
+    right: 14px;
+    width: 290px;
+    max-height: 68vh;
+    overflow-y: auto;
+    background: #131936;
+    border: 1px solid rgba(139, 92, 246, 0.6);
+    border-radius: 16px;
+    padding: 12px;
+    z-index: 100;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+}
+.hist-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #38bdf8;
+}
+.hist-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 9px 10px;
+    margin-bottom: 6px;
+    background: rgba(30, 41, 59, 0.85);
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 13px;
+    border: 1px solid transparent;
+}
+.hist-item.active { border-color: #38bdf8; background: rgba(56, 189, 248, 0.15); }
+.hist-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.del-chat { color: #f87171; font-weight: bold; margin-left: 8px; padding: 2px 6px; }
 #chat {
     flex: 1;
     overflow-y: auto;
@@ -138,21 +174,6 @@ header {
     font-family: monospace;
     font-size: 13px;
 }
-.b img {
-    max-width: 100%;
-    border-radius: 12px;
-    margin-top: 8px;
-    display: block;
-    border: 1px solid rgba(168, 85, 247, 0.4);
-}
-.dl {
-    display: inline-block;
-    margin-top: 8px;
-    color: #38bdf8;
-    font-size: 13px;
-    font-weight: bold;
-    text-decoration: none;
-}
 .th { color: #c084fc; font-style: italic; }
 .bottom {
     background: rgba(15, 23, 42, 0.92);
@@ -163,7 +184,7 @@ header {
     max-width: 820px;
     margin: 0 auto;
     display: flex;
-    gap: 6px;
+    gap: 8px;
     background: #1e293b;
     padding: 6px 8px 6px 16px;
     border-radius: 28px;
@@ -177,26 +198,16 @@ input {
     font-size: 15px;
     outline: none;
 }
-#img-btn {
-    background: linear-gradient(135deg, #ec4899, #8b5cf6);
-    color: #fff;
-    border: none;
-    padding: 10px 14px;
-    border-radius: 22px;
-    font-weight: 700;
-    cursor: pointer;
-    white-space: nowrap;
-}
 #btn {
     background: linear-gradient(135deg, #06b6d4, #6366f1);
     color: #fff;
     border: none;
-    padding: 10px 18px;
+    padding: 10px 20px;
     border-radius: 22px;
     font-weight: 700;
     cursor: pointer;
 }
-button:disabled { opacity: 0.45; }
+#btn:disabled { opacity: 0.45; }
 .foot {
     max-width: 820px;
     margin: 8px auto 0;
@@ -219,8 +230,16 @@ button:disabled { opacity: 0.45; }
 <body>
 <header>
     <div class="brand">CALMTECH</div>
-    <button class="new-btn" onclick="resetChat()">+ New Chat</button>
+    <div class="hdr-btns">
+        <button class="nav-btn" onclick="toggleHistory()">History</button>
+        <button class="nav-btn" onclick="resetChat()">+ New Chat</button>
+    </div>
 </header>
+
+<div id="history-panel">
+    <div class="hist-head"><span>Previous Chats</span><span style="cursor:pointer" onclick="toggleHistory()">✕</span></div>
+    <div id="hist-list"></div>
+</div>
 
 <div class="ad-banner">
     <script>
@@ -235,23 +254,12 @@ button:disabled { opacity: 0.45; }
     <script src="https://bauval.org"></script>
 </div>
 
-<div id="chat">
-    <div class="welcome" id="w">
-        <div class="w-title">How can I help you today?</div>
-        <div class="w-sub">Ask anything or describe a picture and click Image!</div>
-        <div class="chips">
-            <div class="chip" onclick="ask('Give me 5 profitable online business ideas in Ghana')">Business Ideas</div>
-            <div class="chip" onclick="askImg('A futuristic sports car in Accra at sunset, realistic photo')">Create Car Image</div>
-            <div class="chip" onclick="ask('Give me useful websites for learning free skills')">Useful Links</div>
-        </div>
-    </div>
-</div>
+<div id="chat"></div>
 
 <div class="bottom">
     <div class="in-wrap">
-        <input id="inp" placeholder="Ask anything or describe an image..." onkeypress="if(event.key==='Enter')send(false)">
-        <button id="img-btn" onclick="send(true)">Image</button>
-        <button id="btn" onclick="send(false)">Send</button>
+        <input id="inp" placeholder="Message CALMTECH..." onkeypress="if(event.key==='Enter')send()">
+        <button id="btn" onclick="send()">Send</button>
     </div>
     <div class="foot">
         <span>CALMTECH AI</span>
@@ -260,73 +268,67 @@ button:disabled { opacity: 0.45; }
 </div>
 
 <script>
+let allChats = JSON.parse(localStorage.getItem("calmtech_chats") || "{}");
 let sid = "u_" + Math.random().toString(36).slice(2, 11);
+
+function saveStore() {
+    localStorage.setItem("calmtech_chats", JSON.stringify(allChats));
+    renderHistory();
+}
+
+function toggleHistory() {
+    const p = document.getElementById("history-panel");
+    p.style.display = p.style.display === "block" ? "none" : "block";
+    renderHistory();
+}
+
+function renderHistory() {
+    const list = document.getElementById("hist-list");
+    const ids = Object.keys(allChats).reverse();
+    if (!ids.length) {
+        list.innerHTML = '<div style="color:#94a3b8;font-size:13px;">No saved chats yet.</div>';
+        return;
+    }
+    list.innerHTML = ids.map(id => {
+        const title = (allChats[id].title || "Chat").replace(/</g, "&lt;");
+        const active = id === sid ? " active" : "";
+        return `<div class="hist-item${active}" onclick="loadChat('${id}')"><span class="hist-title">${title}</span><span class="del-chat" onclick="delChat(event,'${id}')">×</span></div>`;
+    }).join("");
+}
+
+function loadChat(id) {
+    sid = id;
+    document.getElementById("history-panel").style.display = "none";
+    const box = document.getElementById("chat");
+    box.innerHTML = "";
+    const msgs = (allChats[id] && allChats[id].messages) || [];
+    msgs.forEach(m => {
+        if (m.role === "u") {
+            box.innerHTML += `<div class="row u"><div class="msg">${m.text.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</div></div>`;
+        } else {
+            box.innerHTML += `<div class="row b"><div class="msg">${fmt(m.text)}</div></div>`;
+        }
+    });
+    box.scrollTop = box.scrollHeight;
+}
+
+function delChat(e, id) {
+    e.stopPropagation();
+    delete allChats[id];
+    saveStore();
+    if (id === sid) resetChat();
+}
 
 function resetChat() {
     sid = "u_" + Math.random().toString(36).slice(2, 11);
-    document.getElementById("chat").innerHTML = '<div class="welcome" id="w"><div class="w-title">How can I help you today?</div><div class="w-sub">New conversation started. Ask anything or create an image!</div></div>';
+    document.getElementById("history-panel").style.display = "none";
+    document.getElementById("chat").innerHTML = '<div class="welcome" id="w"><div class="w-title">How can I help you today?</div><div class="w-sub">Ask anything—coding, business ideas, writing, or everyday questions.</div><div class="chips"><div class="chip" onclick="ask(\'Give me 5 profitable online business ideas in Ghana\')">Business Ideas</div><div class="chip" onclick="ask(\'Write a professional CV summary for me\')">Write a CV</div><div class="chip" onclick="ask(\'Give me useful websites for learning free skills\')">Useful Links</div></div></div>';
 }
 
 function ask(q) {
     document.getElementById("inp").value = q;
-    send(false);
-}
-
-function askImg(q) {
-    document.getElementById("inp").value = q;
-    send(true);
+    send();
 }
 
 function fmt(t) {
     let s = t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    s = s.replace(/```([\s\S]*?)```/g, "<pre>$1</pre>");
-    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-    s = s.replace(/(^|[\s(>])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
-    return s.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-}
-
-async function send(makeImg) {
-    const i = document.getElementById("inp");
-    const b = document.getElementById("btn");
-    const ib = document.getElementById("img-btn");
-    const c = document.getElementById("chat");
-    let t = i.value.trim();
-    if (!t || b.disabled) return;
-
-    if (makeImg && !t.toLowerCase().startsWith("/image")) {
-        t = "/image " + t;
-    }
-
-    const w = document.getElementById("w");
-    if (w) w.remove();
-
-    i.disabled = b.disabled = ib.disabled = true;
-    c.innerHTML += `<div class="row u"><div class="msg">${t.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</div></div>`;
-    i.value = "";
-
-    const isImg = t.toLowerCase().startsWith("/image");
-    const id = "t" + Date.now();
-    c.innerHTML += `<div class="row b" id="${id}"><div class="msg th">${isImg ? "Creating your image..." : "Thinking..."}</div></div>`;
-    c.scrollTop = c.scrollHeight;
-
-    try {
-        const r = await fetch("/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: t, session_id: sid })
-        });
-        const d = await r.json();
-        if (d.image_data) {
-            document.getElementById(id).innerHTML = `<div class="msg">${fmt(d.reply)}<img src="${d.image_data}" alt="Generated"><a class="dl" href="${d.image_data}" download="calmtech-image.png">Download Image</a></div>`;
-        } else {
-            document.getElementById(id).innerHTML = `<div class="msg">${fmt(d.reply)}</div>`;
-        }
-    } catch (e) {
-        document.getElementById(id).innerHTML = `<div class="msg">Error: ${e.message}</div>`;
-    }
-
-    i.disabled = b.disabled = ib.disabled = false;
-    i.focus();
-    c.scrollTop = c.scrollHeight;
-}
-</script>
