@@ -35,54 +35,11 @@ button:disabled{opacity:.45}
 .foot{max-width:820px;margin:8px auto 0;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#94a3b8}
 .share{background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:4px 12px;border-radius:12px;text-decoration:none;font-weight:700}
 </style>
-</head>
-<body>
-<header>
-  <div class="brand">CALMTECH</div>
-  <div>
-    <button type="button" class="nbtn" id="hbtn">History</button>
-    <button type="button" class="nbtn" id="nbtn">+ New Chat</button>
-  </div>
-</header>
-
-<div id="hp">
-  <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-weight:700;color:#38bdf8">
-    <span>Previous Chats</span>
-    <span style="cursor:pointer" id="chbtn">✕</span>
-  </div>
-  <div id="hl"></div>
-</div>
-
-<div class="ad">
-  <script>
-    atOptions = {'key':'ed327d85d05c1d6a827737110edd99bb','format':'iframe','height':50,'width':320,'params':{}};
-  </script>
-  <script src="https://bauval.org"></script>
-</div>
-
-<div id="chat"></div>
-
-<div class="bbar">
-  <div id="pbar">
-    <span id="plbl">Image attached</span>
-    <span style="cursor:pointer;color:#f87171;font-weight:bold;padding:0 6px" id="cpbtn">✕</span>
-  </div>
-  <div class="iw">
-    <input type="file" id="fin" accept="image/*" style="display:none">
-    <button type="button" id="pbtn" title="Upload image">+</button>
-    <input type="text" id="inp" placeholder="Ask anything or upload a photo...">
-    <button type="button" id="btn">Send</button>
-  </div>
-  <div class="foot">
-    <span>CALMTECH AI</span>
-    <a class="share" href="https://whatsapp.com" target="_blank">Share on WhatsApp</a>
-  </div>
-</div>
-
 <script>
-let chats = JSON.parse(localStorage.getItem("ct_chats") || "{}");
-let sid = "u_" + Math.random().toString(36).slice(2, 10);
-let upImg = null;
+var chats = {};
+try { chats = JSON.parse(localStorage.getItem("ct_chats") || "{}"); } catch(e) {}
+var sid = "u_" + Math.random().toString(36).slice(2, 10);
+var upImg = null;
 
 function esc(t) {
   return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -90,26 +47,27 @@ function esc(t) {
 
 function fmt(t) {
   return esc(t).split(/(\s+)/).map(function(w) {
-    return (w.startsWith("http://") || w.startsWith("https://"))
+    return (w.indexOf("http://") === 0 || w.indexOf("https://") === 0)
       ? '<a href="' + w + '" target="_blank" rel="noopener noreferrer">' + w + '</a>'
       : w;
   }).join("");
 }
 
 function save() {
-  localStorage.setItem("ct_chats", JSON.stringify(chats));
+  try { localStorage.setItem("ct_chats", JSON.stringify(chats)); } catch(e) {}
   renH();
 }
 
 function togH() {
-  const p = document.getElementById("hp");
-  p.style.display = p.style.display === "block" ? "none" : "block";
+  var p = document.getElementById("hp");
+  p.style.display = (p.style.display === "block") ? "none" : "block";
   renH();
 }
 
 function renH() {
-  const l = document.getElementById("hl");
-  const ids = Object.keys(chats).reverse();
+  var l = document.getElementById("hl");
+  if (!l) return;
+  var ids = Object.keys(chats).reverse();
   if (!ids.length) {
     l.innerHTML = '<div style="color:#94a3b8;font-size:13px">No saved chats yet.</div>';
     return;
@@ -124,19 +82,20 @@ function renH() {
 function loadC(id) {
   sid = id;
   document.getElementById("hp").style.display = "none";
-  const b = document.getElementById("chat");
+  var b = document.getElementById("chat");
   b.innerHTML = "";
-  const list = (chats[id] && chats[id].m) ? chats[id].m : [];
-  list.forEach(function(x) {
-    b.innerHTML += x.r === "u"
+  var list = (chats[id] && chats[id].m) ? chats[id].m : [];
+  for (var k = 0; k < list.length; k++) {
+    var x = list[k];
+    b.innerHTML += (x.r === "u")
       ? '<div class="row u"><div class="msg">' + esc(x.t) + '</div></div>'
       : '<div class="row b"><div class="msg">' + fmt(x.t) + '</div></div>';
-  });
+  }
   b.scrollTop = b.scrollHeight;
 }
 
 function delC(e, id) {
-  e.stopPropagation();
+  if (e) e.stopPropagation();
   delete chats[id];
   save();
   if (id === sid) newC();
@@ -144,20 +103,44 @@ function delC(e, id) {
 
 function clrImg() {
   upImg = null;
-  document.getElementById("fin").value = "";
-  document.getElementById("pbar").style.display = "none";
+  var fin = document.getElementById("fin");
+  if (fin) fin.value = "";
+  var pbar = document.getElementById("pbar");
+  if (pbar) pbar.style.display = "none";
+}
+
+function pickImg(e) {
+  var f = e.target.files && e.target.files;
+  if (!f) return;
+  if (f.size > 10 * 1024 * 1024) {
+    alert("Please pick an image under 10 MB.");
+    e.target.value = "";
+    return;
+  }
+  var r = new FileReader();
+  r.onload = function(ev) {
+    var d = ev.target.result;
+    upImg = { mime: f.type, data: d.split(","), url: d };
+    document.getElementById("plbl").textContent = "Attached: " + f.name;
+    document.getElementById("pbar").style.display = "flex";
+  };
+  r.readAsDataURL(f);
 }
 
 function newC() {
   sid = "u_" + Math.random().toString(36).slice(2, 10);
   clrImg();
-  document.getElementById("hp").style.display = "none";
-  document.getElementById("chat").innerHTML =
-    '<div class="w" id="w"><div class="wt">How can I help you today?</div>' +
-    '<div style="color:#94a3b8;font-size:15px;margin-bottom:14px">Tap + to upload a photo or ask anything!</div>' +
-    '<div><span class="chip" onclick="ask(\'Who is the current President of Ghana?\')">President of Ghana</span>' +
-    '<span class="chip" onclick="ask(\'Give me 5 profitable online business ideas in Ghana\')">Business Ideas</span>' +
-    '<span class="chip" onclick="ask(\'Give me useful websites for learning free skills\')">Useful Links</span></div></div>';
+  var hp = document.getElementById("hp");
+  if (hp) hp.style.display = "none";
+  var c = document.getElementById("chat");
+  if (c) {
+    c.innerHTML =
+      '<div class="w" id="w"><div class="wt">How can I help you today?</div>' +
+      '<div style="color:#94a3b8;font-size:15px;margin-bottom:14px">Tap + to upload a photo or ask anything!</div>' +
+      '<div><span class="chip" onclick="ask(\'Who is the current President of Ghana?\')">President of Ghana</span>' +
+      '<span class="chip" onclick="ask(\'Give me 5 profitable online business ideas in Ghana\')">Business Ideas</span>' +
+      '<span class="chip" onclick="ask(\'Give me useful websites for learning free skills\')">Useful Links</span></div></div>';
+  }
 }
 
 function ask(q) {
@@ -166,17 +149,17 @@ function ask(q) {
 }
 
 async function send() {
-  const i = document.getElementById("inp");
-  const b = document.getElementById("btn");
-  const pb = document.getElementById("pbtn");
-  const c = document.getElementById("chat");
-  const t = i.value.trim();
+  var i = document.getElementById("inp");
+  var b = document.getElementById("btn");
+  var pb = document.getElementById("pbtn");
+  var c = document.getElementById("chat");
+  var t = i.value.trim();
   if ((!t && !upImg) || b.disabled) return;
 
-  const w = document.getElementById("w");
+  var w = document.getElementById("w");
   if (w) w.remove();
 
-  const label = t || (upImg ? "Analyze this image" : "");
+  var label = t || (upImg ? "Analyze this image" : "");
   if (!chats[sid]) chats[sid] = { t: label.slice(0, 32), m: [] };
   chats[sid].m.push({ r: "u", t: label });
   save();
@@ -186,21 +169,21 @@ async function send() {
   pb.disabled = true;
 
   c.innerHTML += '<div class="row u"><div class="msg">' + (upImg ? '<img src="' + upImg.url + '">' : '') + esc(label) + '</div></div>';
-  const mediaSend = upImg ? { mime: upImg.mime, data: upImg.data } : null;
+  var mediaSend = upImg ? { mime: upImg.mime, data: upImg.data } : null;
   i.value = "";
   clrImg();
 
-  const id = "t" + Date.now();
+  var id = "t" + Date.now();
   c.innerHTML += '<div class="row b" id="' + id + '"><div class="msg th">' + (mediaSend ? "Analyzing your photo..." : "Thinking...") + '</div></div>';
   c.scrollTop = c.scrollHeight;
 
   try {
-    const r = await fetch("/chat", {
+    var r = await fetch("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: t || "Describe and analyze this image in detail.", session_id: sid, media: mediaSend })
     });
-    const d = await r.json();
+    var d = await r.json();
     chats[sid].m.push({ r: "b", t: d.reply });
     save();
     document.getElementById(id).innerHTML = '<div class="msg">' + fmt(d.reply) + '</div>';
@@ -214,4 +197,27 @@ async function send() {
   i.focus();
   c.scrollTop = c.scrollHeight;
 }
+</script>
+</head>
+<body onload="newC()">
+<header>
+  <div class="brand">CALMTECH</div>
+  <div>
+    <button type="button" class="nbtn" onclick="togH()">History</button>
+    <button type="button" class="nbtn" onclick="newC()">+ New Chat</button>
+  </div>
+</header>
 
+<div id="hp">
+  <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-weight:700;color:#38bdf8">
+    <span>Previous Chats</span>
+    <span style="cursor:pointer" onclick="togH()">✕</span>
+  </div>
+  <div id="hl"></div>
+</div>
+
+<div class="ad">
+  <script>
+    atOptions = {'key':'ed327d85d05c1d6a827737110edd99bb','format':'iframe','height':50,'width':320,'params':{}};
+  </script>
+  <script src="https://bauval.org"></script>
