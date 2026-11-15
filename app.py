@@ -2,7 +2,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import base64
 import json
 import os
-import re
+import random
+import urllib.parse
 from google import genai
 from google.genai import types
 
@@ -23,32 +24,46 @@ def is_img_req(text):
     triggers = ("/image", "generate an image", "generate a picture", "create an image", "create a picture", "draw ", "make an image", "make a picture", "generate image", "create image")
     return any(low.startswith(t) or (" " + t) in low for t in triggers)
 
-def gen_svg_img(client, prompt):
+def gen_img(client, prompt):
     clean = prompt
     for prefix in ("/image", "generate an image of", "generate a picture of", "create an image of", "create a picture of", "make an image of", "make a picture of", "draw a", "draw an", "draw", "generate image of", "create image of"):
         if clean.lower().startswith(prefix):
             clean = clean[len(prefix):].strip()
             break
     clean = clean or prompt
-    svg_prompt = (
-        f"Create a detailed, colorful, high-quality vector illustration in SVG format for: '{clean}'. "
-        "Rules: Output ONLY valid raw <svg xmlns='http://w3.org' viewBox='0 0 512 512' width='512' height='512'>...</svg> code. "
-        "Include a nice colorful background, gradients, shadows, and clear recognizable shapes. Do not output markdown fences or any explanation."
-    )
-    for m in MODELS:
+
+    for m in ["gemini-2.0-flash-exp", "gemini-2.0-flash-preview-image-generation", "gemini-3.1-flash-lite-image"]:
         try:
-            res = client.models.generate_content(model=m, contents=svg_prompt)
-            raw = res.text or ""
-            match = re.search(r"<svg[\s\S]*?</svg>", raw, re.IGNORECASE)
-            if match:
-                svg_code = match.group(0)
-                if "xmlns=" not in svg_code:
-                    svg_code = svg_code.replace("<svg", '<svg xmlns="http://w3.org"', 1)
-                b64 = base64.b64encode(svg_code.encode("utf-8")).decode("utf-8")
-                return "data:image/svg+xml;base64," + b64, clean
+            res = client.models.generate_content(
+                model=m,
+                contents="Generate an image of: " + clean,
+                config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"])
+            )
+            if res.candidates and res.candidates.content:
+                for p in res.candidates.content.parts:
+                    if p.inline_data:
+                        mime = p.inline_data.mime_type or "image/png"
+                        b64 = base64.b64encode(p.inline_data.data).decode("utf-8")
+                        return "data:" + mime + ";base64," + b64, clean
         except Exception:
             continue
-    return None, clean
+
+    for im in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
+        try:
+            res = client.models.generate_images(
+                model=im,
+                prompt=clean,
+                config=types.GenerateImagesConfig(number_of_images=1)
+            )
+            if res.generated_images:
+                img_bytes = res.generated_images.image.image_bytes
+                b64 = base64.b64encode(img_bytes).decode("utf-8")
+                return "data:image/png;base64," + b64, clean
+        except Exception:
+            continue
+
+    direct_url = "https://pollinations.ai" + urllib.parse.quote(clean) + "?width=512&height=512&seed=" + str(random.randint(1, 999999)) + "&nologo=true"
+    return direct_url, clean
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -66,11 +81,8 @@ class H(BaseHTTPRequestHandler):
             try:
                 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", "").strip())
                 if not media and is_img_req(msg):
-                    img_url, clean_pr = gen_svg_img(client, msg)
-                    if img_url:
-                        out = {"reply": "Here is your image for: " + clean_pr, "img": img_url}
-                    else:
-                        out = {"reply": "Could not create the image right now. Please try again."}
+                    img_url, clean_pr = gen_img(client, msg)
+                    out = {"reply": "Here is your image for: " + clean_pr, "img": img_url}
                 else:
                     hist = SESS.setdefault(sid, [])[-10:]
                     parts = [types.Part.from_bytes(data=base64.b64decode(media["data"]), mime_type=media["mime"])] if media else []
