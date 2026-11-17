@@ -40,22 +40,165 @@ button:disabled{opacity:.45}
 </style>
 </head>
 <body>
-<header><div class="brand">CALMTECH</div><div><button type="button" class="nbtn" onclick="togH()">History</button><button type="button" class="nbtn" onclick="newC()">+ New Chat</button></div></header>
-<div id="hp"><div style="display:flex;justify-content:space-between;margin-bottom:8px;font-weight:700;color:#38bdf8"><span>Previous Chats</span><span style="cursor:pointer" onclick="togH()">✕</span></div><div id="hl"></div></div>
-<div class="ad"><script>atOptions={'key':'ed327d85d05c1d6a827737110edd99bb','format':'iframe','height':50,'width':320,'params':{}};</script><script src="https://bauval.org"></script></div>
+<header>
+  <div class="brand">CALMTECH</div>
+  <div>
+    <button type="button" class="nbtn" onclick="togH()">History</button>
+    <button type="button" class="nbtn" onclick="newC()">+ New Chat</button>
+  </div>
+</header>
+
+<div id="hp">
+  <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-weight:700;color:#38bdf8">
+    <span>Previous Chats</span>
+    <span style="cursor:pointer" onclick="togH()">✕</span>
+  </div>
+  <div id="hl"></div>
+</div>
+
+<div class="ad">
+  <script>
+    atOptions = {'key':'ed327d85d05c1d6a827737110edd99bb','format':'iframe','height':50,'width':320,'params':{}};
+  </script>
+  <script src="https://bauval.org"></script>
+</div>
+
 <div id="chat"></div>
-<div class="bbar"><div id="pbar"><span id="plbl">Image attached</span><span style="cursor:pointer;color:#f87171;font-weight:bold;padding:0 6px" onclick="clrImg()">✕</span></div><div class="iw"><input type="file" id="fin" accept="image/*" style="display:none" onchange="pickImg(event)"><button type="button" id="pbtn" title="Upload photo" onclick="document.getElementById('fin').click()">+</button><input id="inp" placeholder="Message CALMTECH..." onkeypress="if(event.key==='Enter')send()"><button type="button" id="btn" onclick="send()">Send</button></div><div class="foot"><span>CALMTECH AI</span><a class="share" href="https://whatsapp.com" target="_blank">Share on WhatsApp</a></div></div>
+
+<div class="bbar">
+  <div id="pbar">
+    <span id="plbl">Image attached</span>
+    <span style="cursor:pointer;color:#f87171;font-weight:bold;padding:0 6px" onclick="clrImg()">✕</span>
+  </div>
+  <div class="iw">
+    <input type="file" id="fin" accept="image/*" style="display:none" onchange="pickImg(event)">
+    <button type="button" id="pbtn" title="Upload photo" onclick="document.getElementById('fin').click()">+</button>
+    <input id="inp" placeholder="Message CALMTECH..." onkeydown="if(event.key==='Enter')send()">
+    <button type="button" id="btn" onclick="send()">Send</button>
+  </div>
+  <div class="foot">
+    <span>CALMTECH AI</span>
+    <a class="share" href="https://whatsapp.com" target="_blank">Share on WhatsApp</a>
+  </div>
+</div>
+
 <script>
-let chats=JSON.parse(localStorage.getItem("ct_chats")||"{}"),sid="u_"+Math.random().toString(36).slice(2,10),upImg=null;
-function copyTxt(btn){const box=btn.parentNode.cloneNode(true);const b=box.querySelector(".cbtn");if(b)b.remove();navigator.clipboard.writeText(box.innerText.trim());btn.textContent="Copied!";setTimeout(()=>{btn.textContent="Copy";},1500);}
-function pickImg(e){const f=e.target.files&&e.target.files[0];if(!f)return;if(f.size>10*1024*1024){alert("Max 10 MB image.");e.target.value="";return;}const r=new FileReader();r.onload=ev=>{const d=ev.target.result;upImg={mime:f.type,data:d.split(",")[1],url:d};document.getElementById("plbl").textContent="Attached: "+f.name;document.getElementById("pbar").style.display="flex";};r.readAsDataURL(f);}
-function clrImg(){upImg=null;document.getElementById("fin").value="";document.getElementById("pbar").style.display="none";}
-function save(){localStorage.setItem("ct_chats",JSON.stringify(chats));renH();}
-function togH(){const p=document.getElementById("hp");p.style.display=p.style.display==="block"?"none":"block";renH();}
-function renH(){const l=document.getElementById("hl"),ids=Object.keys(chats).reverse();l.innerHTML=ids.length?ids.map(id=>`<div class="hi ${id===sid?'act':''}" onclick="loadC('${id}')"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(chats[id].t||'Chat')}</span><span style="color:#f87171;margin-left:8px" onclick="delC(event,'${id}')">×</span></div>`).join(""):'<div style="color:#94a3b8;font-size:13px">No saved chats yet.</div>';}
-function loadC(id){sid=id;document.getElementById("hp").style.display="none";const b=document.getElementById("chat");b.innerHTML="";(chats[id]?.m||[]).forEach(x=>{b.innerHTML+=x.r==="u"?`<div class="row u"><div class="msg">${esc(x.t)}</div></div>`:`<div class="row b"><div class="msg">${fmt(x.t)}<br><button type="button" class="cbtn" onclick="copyTxt(this)">Copy</button></div></div>`;});b.scrollTop=b.scrollHeight;}
-function delC(e,id){e.stopPropagation();delete chats[id];save();if(id===sid)newC();}
-function newC(){sid="u_"+Math.random().toString(36).slice(2,10);clrImg();document.getElementById("hp").style.display="none";document.getElementById("chat").innerHTML='<div class="w" id="w"><div class="wt">How can I help you today?</div><div style="color:#94a3b8;font-size:15px;margin-bottom:14px">Ask in English, Twi, or Pidgin — or tap + to upload a photo!</div><div><span class="chip" onclick="ask(\'Wo ho te sɛn? Kyerɛ me adwuma pa a mɛtumi ayɛ wɔ Ghana\')">Chat in Twi</span><span class="chip" onclick="ask(\'How body? Give me 5 sharp business ideas for Ghana\')">Chat in Pidgin</span><span class="chip" onclick="ask(\'Who is the current President of Ghana?\')">President of Ghana</span></div></div>';}
-function ask(q){document.getElementById("inp").value=q;send();}
-function esc(t){return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-function fmt(t){return esc(t).split(/(\s+)/).map(w=>w.startsWith("http://")||w.startsWith("https://")?`<a href="${w}" target="_blank">${w}</a>`:w).join("");}
+var chats = {};
+try { chats = JSON.parse(localStorage.getItem("ct_chats") || "{}"); } catch (e) {}
+var sid = "u_" + Math.random().toString(36).slice(2, 10);
+var upImg = null;
+
+function copyTxt(btn) {
+  var box = btn.parentNode.cloneNode(true);
+  var b = box.querySelector(".cbtn");
+  if (b) b.remove();
+  navigator.clipboard.writeText(box.innerText.trim());
+  btn.textContent = "Copied!";
+  setTimeout(function() { btn.textContent = "Copy"; }, 1500);
+}
+
+function pickImg(e) {
+  var f = e.target.files && e.target.files[0];
+  if (!f) return;
+  if (f.size > 10 * 1024 * 1024) {
+    alert("Max 10 MB image.");
+    e.target.value = "";
+    return;
+  }
+  var r = new FileReader();
+  r.onload = function(ev) {
+    var d = ev.target.result;
+    upImg = { mime: f.type, data: d.split(",")[1], url: d };
+    document.getElementById("plbl").textContent = "Attached: " + f.name;
+    document.getElementById("pbar").style.display = "flex";
+  };
+  r.readAsDataURL(f);
+}
+
+function clrImg() {
+  upImg = null;
+  document.getElementById("fin").value = "";
+  document.getElementById("pbar").style.display = "none";
+}
+
+function save() {
+  try { localStorage.setItem("ct_chats", JSON.stringify(chats)); } catch (e) {}
+  renH();
+}
+
+function togH() {
+  var p = document.getElementById("hp");
+  p.style.display = p.style.display === "block" ? "none" : "block";
+  renH();
+}
+
+function renH() {
+  var l = document.getElementById("hl");
+  var ids = Object.keys(chats).reverse();
+  if (!ids.length) {
+    l.innerHTML = '<div style="color:#94a3b8;font-size:13px">No saved chats yet.</div>';
+    return;
+  }
+  l.innerHTML = ids.map(function(id) {
+    return '<div class="hi ' + (id === sid ? 'act' : '') + '" onclick="loadC(\'' + id + '\')">' +
+      '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + esc(chats[id].t || 'Chat') + '</span>' +
+      '<span style="color:#f87171;margin-left:8px" onclick="delC(event,\'' + id + '\')">×</span></div>';
+  }).join("");
+}
+
+function loadC(id) {
+  sid = id;
+  document.getElementById("hp").style.display = "none";
+  var b = document.getElementById("chat");
+  b.innerHTML = "";
+  var list = (chats[id] && chats[id].m) ? chats[id].m : [];
+  list.forEach(function(x) {
+    if (x.r === "u") {
+      b.innerHTML += '<div class="row u"><div class="msg">' + esc(x.t) + '</div></div>';
+    } else {
+      b.innerHTML += '<div class="row b"><div class="msg">' + fmt(x.t) + '<br><button type="button" class="cbtn" onclick="copyTxt(this)">Copy</button></div></div>';
+    }
+  });
+  b.scrollTop = b.scrollHeight;
+}
+
+function delC(e, id) {
+  e.stopPropagation();
+  delete chats[id];
+  save();
+  if (id === sid) newC();
+}
+
+function newC() {
+  sid = "u_" + Math.random().toString(36).slice(2, 10);
+  clrImg();
+  document.getElementById("hp").style.display = "none";
+  document.getElementById("chat").innerHTML =
+    '<div class="w" id="w"><div class="wt">How can I help you today?</div>' +
+    '<div style="color:#94a3b8;font-size:15px;margin-bottom:14px">Ask in English, Twi, or Pidgin — or tap + to upload a photo!</div>' +
+    '<div><span class="chip" onclick="ask(\'Wo ho te sɛn? Kyerɛ me adwuma pa a mɛtumi ayɛ wɔ Ghana\')">Chat in Twi</span>' +
+    '<span class="chip" onclick="ask(\'How body? Give me 5 sharp business ideas for Ghana\')">Chat in Pidgin</span>' +
+    '<span class="chip" onclick="ask(\'Who is the current President of Ghana?\')">President of Ghana</span></div></div>';
+}
+
+function ask(q) {
+  document.getElementById("inp").value = q;
+  send();
+}
+
+function esc(t) {
+  return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function fmt(t) {
+  return esc(t).split(/(\s+)/).map(function(w) {
+    return (w.indexOf("http://") === 0 || w.indexOf("https://") === 0)
+      ? '<a href="' + w + '" target="_blank" rel="noopener noreferrer">' + w + '</a>'
+      : w;
+  }).join("");
+}
+
+async function send() {
+  var i = document.getElementById("inp");
+  var b = document.getElementById("btn");
+  var pb = document.getElementById("pbtn");
