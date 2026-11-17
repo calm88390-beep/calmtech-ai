@@ -5,11 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="google-site-verification" content="jWhj15D6BV4TN1S2Tpu9ZfqE2_R1fkhahG2OEWHHYmA" />
 <meta name="description" content="CALMTECH AI - Free smart AI assistant. Ask questions in English, Twi, or Pidgin, upload photos, and learn faster.">
-<meta name="theme-color" content="#0f172a">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="CALMTECH">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://w3.org' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%231e1b4b'/><text x='50' y='68' font-size='55' font-family='sans-serif' font-weight='bold' fill='%2338bdf8' text-anchor='middle'>C</text></svg>">
-<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://w3.org' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%231e1b4b'/><text x='50' y='68' font-size='55' font-family='sans-serif' font-weight='bold' fill='%2338bdf8' text-anchor='middle'>C</text></svg>">
 <title>CALMTECH AI - Free Smart AI Assistant</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -55,10 +50,14 @@ function renH(){var l=document.getElementById("hl"),ids=Object.keys(chats).rever
 function loadC(id){sid=id;document.getElementById("hp").style.display="none";var b=document.getElementById("chat");b.innerHTML="";(chats[id]&&chats[id].m||[]).forEach(function(x){b.innerHTML+=x.r==="u"?'<div class="row u"><div class="msg">'+esc(x.t)+'</div></div>':'<div class="row b"><div class="msg">'+fmt(x.t)+'<br><button type="button" class="cbtn" onclick="copyTxt(this)">Copy</button></div></div>';});b.scrollTop=b.scrollHeight;}
 function delC(e,id){e.stopPropagation();delete chats[id];save();if(id===sid)newC();}
 function clrImg(){upImg=null;document.getElementById("fin").value="";document.getElementById("pbar").style.display="none";}
-function pickImg(e){var f=e.target.files&&e.target.files[0];if(!f)return;if(f.size>10*1024*1024){alert("Max 10 MB image.");e.target.value="";return;}var r=new FileReader();r.onload=function(ev){var d=ev.target.result;upImg={mime:f.type,data:d.split(",")[1],url:d};document.getElementById("plbl").textContent="Attached: "+f.name;document.getElementById("pbar").style.display="flex";};r.readAsDataURL(f);}
+function pickImg(e){var f=e.target.files&&e.target.files;if(!f)return;if(f.size>10*1024*1024){alert("Max 10 MB image.");e.target.value="";return;}var r=new FileReader();r.onload=function(ev){var d=ev.target.result;upImg={mime:f.type,data:d.split(","),url:d};document.getElementById("plbl").textContent="Attached: "+f.name;document.getElementById("pbar").style.display="flex";};r.readAsDataURL(f);}
 function newC(){sid="u_"+Math.random().toString(36).slice(2,10);clrImg();document.getElementById("hp").style.display="none";document.getElementById("chat").innerHTML='<div class="w" id="w"><div class="wt">How can I help you today?</div><div style="color:#94a3b8;font-size:15px;margin-bottom:14px">Ask in English, Twi, or Pidgin — or tap + to upload a photo!</div><div><span class="chip" onclick="ask(\'Wo ho te sɛn? Kyerɛ me adwuma pa a mɛtumi ayɛ wɔ Ghana\')">Chat in Twi</span><span class="chip" onclick="ask(\'How body? Give me 5 sharp business ideas for Ghana\')">Chat in Pidgin</span><span class="chip" onclick="ask(\'Who is the current President of Ghana?\')">President of Ghana</span></div></div>';}
 function ask(q){document.getElementById("inp").value=q;send();}
 async function send(){var i=document.getElementById("inp"),b=document.getElementById("btn"),pb=document.getElementById("pbtn"),c=document.getElementById("chat"),t=i.value.trim();if((!t&&!upImg)||b.disabled)return;var w=document.getElementById("w");if(w)w.remove();var lbl=t||(upImg?"Analyze this image":"");if(!chats[sid])chats[sid]={t:lbl.slice(0,32),m:[]};chats[sid].m.push({r:"u",t:lbl});save();i.disabled=b.disabled=pb.disabled=true;c.innerHTML+=`<div class="row u"><div class="msg">${upImg?`<img src="${upImg.url}">`:""}${esc(lbl)}</div></div>`;var ms=upImg?{mime:upImg.mime,data:upImg.data}:null;i.value="";clrImg();const id="t"+Date.now();c.innerHTML+=`<div class="row b" id="${id}"><div class="msg th">${ms?"Analyzing photo...":"Thinking..."}</div></div>`;c.scrollTop=c.scrollHeight;try{var r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:t||"Analyze this image in detail.",session_id:sid,media:ms})});var d=await r.json();chats[sid].m.push({r:"b",t:d.reply});save();document.getElementById(id).innerHTML=`<div class="msg">${fmt(d.reply)}<br><button type="button" class="cbtn" onclick="copyTxt(this)">Copy</button></div>`;}catch(e){document.getElementById(id).innerHTML=`<div class="msg">Error: ${esc(e.message)}</div>`;}i.disabled=b.disabled=pb.disabled=false;i.focus();c.scrollTop=c.scrollHeight;}
 </script>
 </head>
 <body onload="newC()">
+<header><div class="brand">CALMTECH</div><div><button type="button" class="nbtn" onclick="togH()">History</button><button type="button" class="nbtn" onclick="newC()">+ New Chat</button></div></header>
+<div id="hp"><div style="display:flex;justify-content:space-between;margin-bottom:8px;font-weight:700;color:#38bdf8"><span>Previous Chats</span><span style="cursor:pointer" onclick="togH()">✕</span></div><div id="hl"></div></div>
+<div class="ad"><script>atOptions={'key':'ed327d85d05c1d6a827737110edd99bb','format':'iframe','height':50,'width':320,'params':{}};</script><script src="https://bauval.org"></script></div>
+<div id="chat"></div>
