@@ -14,8 +14,8 @@ CFG = types.GenerateContentConfig(
         "Analyze uploaded images in detail, answer questions accurately, and share full clickable URLs like https://example.com when helpful."
     )
 )
-MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
-EDIT_MODELS = ["gemini-2.5-flash-image"]
+MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+EDIT_MODELS = ["gemini-3.8-flash", "gemini-3.1-flash-lite-image"]
 SESS = {}
 
 def is_edit_req(text):
@@ -25,6 +25,7 @@ def is_edit_req(text):
 
 def edit_photo(client, img_bytes, mime_type, prompt):
     img_part = types.Part.from_bytes(data=img_bytes, mime_type=mime_type)
+    last_err = ""
     for m in EDIT_MODELS:
         try:
             res = client.models.generate_content(
@@ -32,15 +33,16 @@ def edit_photo(client, img_bytes, mime_type, prompt):
                 contents=[img_part, prompt],
                 config=types.GenerateContentConfig(response_modalities=["IMAGE"])
             )
-            if res.candidates and res.candidates[0].content:
-                for p in res.candidates[0].content.parts:
+            if res.candidates and res.candidates.content:
+                for p in res.candidates.content.parts:
                     if p.inline_data:
                         out_mime = p.inline_data.mime_type or "image/png"
                         b64 = base64.b64encode(p.inline_data.data).decode("utf-8")
                         return "data:" + out_mime + ";base64," + b64, ""
         except Exception as e:
-            return None, str(e)
-    return None, "Model unavailable"
+            last_err = str(e)
+            continue
+    return None, last_err
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -74,7 +76,7 @@ class H(BaseHTTPRequestHandler):
                     if edited_url:
                         out = {"reply": "Here is your edited photo:", "img": edited_url}
                     else:
-                        out = {"reply": "Image editing requires billing enabled on your Gemini API key (" + err_msg[:80] + "). Try asking me to describe or analyze the photo instead!"}
+                        out = {"reply": "Image editing could not complete (" + err_msg[:100] + "). Try asking me to describe or analyze the photo instead!"}
                 else:
                     hist = SESS.setdefault(sid, [])[-10:]
                     parts = [types.Part.from_bytes(data=base64.b64decode(media["data"]), mime_type=media["mime"])] if media else []
@@ -90,7 +92,7 @@ class H(BaseHTTPRequestHandler):
                             SESS[sid] = hist
                             break
                         except Exception as e:
-                            if "503" in str(e) or "429" in str(e):
+                            if "503" in str(e) or "429" in str(e) or "404" in str(e):
                                 continue
                             reply = "Connection error: " + str(e)
                             break
