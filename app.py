@@ -14,8 +14,8 @@ CFG = types.GenerateContentConfig(
         "Analyze uploaded images in detail, answer questions accurately, and share full clickable URLs like https://example.com when helpful."
     )
 )
-MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"]
-EDIT_MODELS = ["gemini-2.5-flash-image", "gemini-2.0-flash-exp-image-generation", "gemini-2.0-flash-exp"]
+MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
+EDIT_MODELS = ["gemini-2.5-flash-image"]
 SESS = {}
 
 def is_edit_req(text):
@@ -30,17 +30,17 @@ def edit_photo(client, img_bytes, mime_type, prompt):
             res = client.models.generate_content(
                 model=m,
                 contents=[img_part, prompt],
-                config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"])
+                config=types.GenerateContentConfig(response_modalities=["IMAGE"])
             )
             if res.candidates and res.candidates[0].content:
                 for p in res.candidates[0].content.parts:
                     if p.inline_data:
                         out_mime = p.inline_data.mime_type or "image/png"
                         b64 = base64.b64encode(p.inline_data.data).decode("utf-8")
-                        return "data:" + out_mime + ";base64," + b64
-        except Exception:
-            continue
-    return None
+                        return "data:" + out_mime + ";base64," + b64, ""
+        except Exception as e:
+            return None, str(e)
+    return None, "Model unavailable"
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -59,42 +59,45 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/chat":
-            d = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
-            msg, sid, media = d.get("message", ""), d.get("session_id", "default"), d.get("media")
+            out = {"reply": "Server error. Please try again."}
             try:
+                length = int(self.headers.get("Content-Length", 0))
+                d = json.loads(self.rfile.read(length).decode("utf-8"))
+                msg = d.get("message", "")
+                sid = d.get("session_id", "default")
+                media = d.get("media")
                 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", "").strip())
+
                 if media and is_edit_req(msg):
                     raw_img = base64.b64decode(media["data"])
-                    edited_url = edit_photo(client, raw_img, media["mime"], msg)
+                    edited_url, err_msg = edit_photo(client, raw_img, media["mime"], msg)
                     if edited_url:
                         out = {"reply": "Here is your edited photo:", "img": edited_url}
-                        self.send_response(200)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps(out).encode("utf-8"))
-                        return
-
-                hist = SESS.setdefault(sid, [])[-10:]
-                parts = [types.Part.from_bytes(data=base64.b64decode(media["data"]), mime_type=media["mime"])] if media else []
-                parts.append(types.Part.from_text(text=msg))
-                hist.append(types.Content(role="user", parts=parts))
-                reply = "Servers are busy. Please try again in a moment."
-                for m in MODELS:
-                    try:
-                        res = client.models.generate_content(model=m, contents=hist, config=CFG)
-                        reply = res.text
-                        hist[-1] = types.Content(role="user", parts=[types.Part.from_text(text=msg)])
-                        hist.append(types.Content(role="model", parts=[types.Part.from_text(text=reply)]))
-                        SESS[sid] = hist
-                        break
-                    except Exception as e:
-                        if "503" in str(e) or "429" in str(e):
-                            continue
-                        reply = "Connection error: " + str(e)
-                        break
-                out = {"reply": reply}
+                    else:
+                        out = {"reply": "Image editing requires billing enabled on your Gemini API key (" + err_msg[:80] + "). Try asking me to describe or analyze the photo instead!"}
+                else:
+                    hist = SESS.setdefault(sid, [])[-10:]
+                    parts = [types.Part.from_bytes(data=base64.b64decode(media["data"]), mime_type=media["mime"])] if media else []
+                    parts.append(types.Part.from_text(text=msg))
+                    hist.append(types.Content(role="user", parts=parts))
+                    reply = "Servers are busy. Please try again in a moment."
+                    for m in MODELS:
+                        try:
+                            res = client.models.generate_content(model=m, contents=hist, config=CFG)
+                            reply = res.text
+                            hist[-1] = types.Content(role="user", parts=[types.Part.from_text(text=msg)])
+                            hist.append(types.Content(role="model", parts=[types.Part.from_text(text=reply)]))
+                            SESS[sid] = hist
+                            break
+                        except Exception as e:
+                            if "503" in str(e) or "429" in str(e):
+                                continue
+                            reply = "Connection error: " + str(e)
+                            break
+                    out = {"reply": reply}
             except Exception as e:
-                out = {"reply": "Configuration error: " + str(e)}
+                out = {"reply": "Error: " + str(e)}
+
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
