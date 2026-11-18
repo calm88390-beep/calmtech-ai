@@ -7,42 +7,23 @@ from google.genai import types
 
 CFG = types.GenerateContentConfig(
     system_instruction=(
-        "You are CALMTECH, a helpful AI assistant. Current year: 2026. "
+        "You are CALMTECH, a fast, helpful AI assistant. Current year: 2026. "
         "The current President of Ghana is John Dramani Mahama (inaugurated January 7, 2025), and the Vice President is Jane Naana Opoku-Agyemang. "
         "NEVER introduce yourself, say your name, or mention your creator unless asked who created, built, or owns you. "
         "If asked who created, built, or owns you, state that you were created by Samuel Frimpong. "
-        "Analyze uploaded images in detail, answer questions accurately, and share full clickable URLs like https://example.com when helpful."
-    )
+        "Give clear, direct, helpful answers, analyze uploaded images in detail, and share full clickable URLs like https://example.com when helpful."
+    ),
+    thinking_config=types.ThinkingConfig(thinking_budget=0)
 )
-MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
-EDIT_MODELS = ["gemini-3.8-flash", "gemini-3.1-flash-lite-image"]
+MODELS = ["gemini-3.8-flash"]
 SESS = {}
+CLIENT = None
 
-def is_edit_req(text):
-    low = text.lower().strip()
-    words = ("edit", "change", "remove", "add", "replace", "turn", "make", "put", "color", "background", "cartoon", "anime", "filter", "dress", "wear", "style")
-    return any(w in low for w in words)
-
-def edit_photo(client, img_bytes, mime_type, prompt):
-    img_part = types.Part.from_bytes(data=img_bytes, mime_type=mime_type)
-    last_err = ""
-    for m in EDIT_MODELS:
-        try:
-            res = client.models.generate_content(
-                model=m,
-                contents=[img_part, prompt],
-                config=types.GenerateContentConfig(response_modalities=["IMAGE"])
-            )
-            if res.candidates and res.candidates.content:
-                for p in res.candidates.content.parts:
-                    if p.inline_data:
-                        out_mime = p.inline_data.mime_type or "image/png"
-                        b64 = base64.b64encode(p.inline_data.data).decode("utf-8")
-                        return "data:" + out_mime + ";base64," + b64, ""
-        except Exception as e:
-            last_err = str(e)
-            continue
-    return None, last_err
+def get_client():
+    global CLIENT
+    if CLIENT is None:
+        CLIENT = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", "").strip())
+    return CLIENT
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -61,49 +42,39 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/chat":
-            out = {"reply": "Server error. Please try again."}
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 d = json.loads(self.rfile.read(length).decode("utf-8"))
                 msg = d.get("message", "")
                 sid = d.get("session_id", "default")
                 media = d.get("media")
-                client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", "").strip())
+                client = get_client()
 
-                if media and is_edit_req(msg):
-                    raw_img = base64.b64decode(media["data"])
-                    edited_url, err_msg = edit_photo(client, raw_img, media["mime"], msg)
-                    if edited_url:
-                        out = {"reply": "Here is your edited photo:", "img": edited_url}
-                    else:
-                        out = {"reply": "Image editing could not complete (" + err_msg[:100] + "). Try asking me to describe or analyze the photo instead!"}
-                else:
-                    hist = SESS.setdefault(sid, [])[-10:]
-                    parts = [types.Part.from_bytes(data=base64.b64decode(media["data"]), mime_type=media["mime"])] if media else []
-                    parts.append(types.Part.from_text(text=msg))
-                    hist.append(types.Content(role="user", parts=parts))
-                    reply = "Servers are busy. Please try again in a moment."
-                    for m in MODELS:
-                        try:
-                            res = client.models.generate_content(model=m, contents=hist, config=CFG)
-                            reply = res.text
-                            hist[-1] = types.Content(role="user", parts=[types.Part.from_text(text=msg)])
-                            hist.append(types.Content(role="model", parts=[types.Part.from_text(text=reply)]))
-                            SESS[sid] = hist
-                            break
-                        except Exception as e:
-                            if "503" in str(e) or "429" in str(e) or "404" in str(e):
-                                continue
-                            reply = "Connection error: " + str(e)
-                            break
-                    out = {"reply": reply}
+                hist = SESS.setdefault(sid, [])[-6:]
+                parts = [types.Part.from_bytes(data=base64.b64decode(media["data"]), mime_type=media["mime"])] if media else []
+                parts.append(types.Part.from_text(text=msg))
+                hist.append(types.Content(role="user", parts=parts))
+
+                self.send_response(200)
+                self.send_header("Content-type", "text/plain; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+
+                full_reply = ""
+                for chunk in client.models.generate_content_stream(model=MODELS[0], contents=hist, config=CFG):
+                    if chunk.text:
+                        full_reply += chunk.text
+                        self.wfile.write(chunk.text.encode("utf-8"))
+                        self.wfile.flush()
+
+                hist[-1] = types.Content(role="user", parts=[types.Part.from_text(text=msg)])
+                hist.append(types.Content(role="model", parts=[types.Part.from_text(text=full_reply)]))
+                SESS[sid] = hist
             except Exception as e:
-                out = {"reply": "Error: " + str(e)}
-
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps(out).encode("utf-8"))
+                try:
+                    self.wfile.write(("Error: " + str(e)).encode("utf-8"))
+                except Exception:
+                    pass
 
 if __name__ == "__main__":
     ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", 8000))), H).serve_forever()
