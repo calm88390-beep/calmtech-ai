@@ -1,7 +1,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
-import requests
+from groq import Groq
 
 SYS_PROMPT = (
     "You are CALMTECH, a fast, helpful AI assistant. Current year: 2026. "
@@ -17,6 +17,7 @@ def ask_groq(hist, media):
     if not key.startswith("gsk_"):
         return "Your GROQ_API_KEY on Render does not look right (it should start with gsk_). Please double-check it in Render Environment settings."
 
+    client = Groq(api_key=key)
     msgs = [{"role": "system", "content": SYS_PROMPT}]
     for h in hist[:-1]:
         msgs.append({"role": h["role"], "content": h["text"]})
@@ -36,27 +37,12 @@ def ask_groq(hist, media):
         model = "llama-3.3-70b-versatile"
         msgs.append({"role": "user", "content": last_text})
 
-    r = requests.post(
-        "https://groq.com",
-        headers={
-            "Authorization": "Bearer " + key,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0"
-        },
-        json={"model": model, "messages": msgs, "temperature": 0.7},
-        timeout=25
+    res = client.chat.completions.create(
+        model=model,
+        messages=msgs,
+        temperature=0.7
     )
-    if not r.text.strip():
-        return "Groq returned an empty response (HTTP " + str(r.status_code) + "). Please verify your GROQ_API_KEY in Render."
-    try:
-        data = r.json()
-    except Exception:
-        return "Groq HTTP " + str(r.status_code) + ": " + r.text[:200]
-
-    if "choices" in data and data["choices"]:
-        return data["choices"].pop(0)["message"]["content"]
-    return "Groq API error: " + str(data.get("error", data))
+    return res.choices[0].message.content
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
