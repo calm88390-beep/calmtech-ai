@@ -12,19 +12,28 @@ SYS_PROMPT = (
 )
 SESS = {}
 
+def pick_models(client):
+    try:
+        all_ids = [m.id for m in client.models.list().data if "whisper" not in m.id.lower() and "tts" not in m.id.lower() and "guard" not in m.id.lower()]
+    except Exception:
+        all_ids = []
+    text_m = next((m for m in all_ids if "70b" in m or "llama-4" in m or "qwen" in m or "llama-3" in m), "llama-3.1-8b-instant")
+    vis_m = next((m for m in all_ids if "scout" in m or "maverick" in m or "vision" in m), text_m)
+    return text_m, vis_m
+
 def ask_groq(hist, media):
     key = "".join(os.environ.get("GROQ_API_KEY", "").split())
     if not key.startswith("gsk_"):
         return "Your GROQ_API_KEY on Render does not look right (it should start with gsk_). Please double-check it in Render Environment settings."
 
     client = Groq(api_key=key)
+    text_m, vis_m = pick_models(client)
     msgs = [{"role": "system", "content": SYS_PROMPT}]
     for h in hist[:-1]:
         msgs.append({"role": h["role"], "content": h["text"]})
     last_text = hist[-1]["text"]
 
     if media:
-        model = "meta-llama/llama-4-scout-17b-16e-instruct"
         data_url = "data:" + media["mime"] + ";base64," + media["data"]
         msgs.append({
             "role": "user",
@@ -33,16 +42,17 @@ def ask_groq(hist, media):
                 {"type": "image_url", "image_url": {"url": data_url}}
             ]
         })
+        model = vis_m
     else:
-        model = "llama-3.3-70b-versatile"
         msgs.append({"role": "user", "content": last_text})
+        model = text_m
 
     res = client.chat.completions.create(
         model=model,
         messages=msgs,
         temperature=0.7
     )
-    return res.choices[0].message.content
+    return res.choices.pop(0).message.content
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
