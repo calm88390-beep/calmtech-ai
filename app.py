@@ -1,29 +1,50 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import base64
 import json
 import os
-from google import genai
-from google.genai import types
+import urllib.request
 
-CFG = types.GenerateContentConfig(
-    system_instruction=(
-        "You are CALMTECH, a fast, helpful AI assistant. Current year: 2026. "
-        "The current President of Ghana is John Dramani Mahama (inaugurated January 7, 2025), and the Vice President is Jane Naana Opoku-Agyemang. "
-        "NEVER introduce yourself, say your name, or mention your creator unless asked who created, built, or owns you. "
-        "If asked who created, built, or owns you, state that you were created by Samuel Frimpong. "
-        "Give clear, direct, helpful answers, analyze uploaded images in detail, and share full clickable URLs like https://example.com when helpful."
-    ),
-    thinking_config=types.ThinkingConfig(thinking_budget=0)
+SYS_PROMPT = (
+    "You are CALMTECH, a fast, helpful AI assistant. Current year: 2026. "
+    "The current President of Ghana is John Dramani Mahama (inaugurated January 7, 2025), and the Vice President is Jane Naana Opoku-Agyemang. "
+    "NEVER introduce yourself, say your name, or mention your creator unless asked who created, built, or owns you. "
+    "If asked who created, built, or owns you, state that you were created by Samuel Frimpong. "
+    "Give clear, direct, helpful answers, analyze uploaded images in detail, and share full clickable URLs like https://example.com when helpful."
 )
-MODELS = ["gemini-3.8-flash"]
 SESS = {}
-CLIENT = None
 
-def get_client():
-    global CLIENT
-    if CLIENT is None:
-        CLIENT = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", "").strip())
-    return CLIENT
+def ask_groq(hist, media):
+    key = os.environ.get("GROQ_API_KEY", "").strip()
+    msgs = [{"role": "system", "content": SYS_PROMPT}]
+    for h in hist[:-1]:
+        msgs.append({"role": h["role"], "content": h["text"]})
+    last_text = hist[-1]["text"]
+    if media:
+        model = "meta-llama/llama-4-scout-17b-16e-instruct"
+        data_url = "data:" + media["mime"] + ";base64," + media["data"]
+        msgs.append({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": last_text},
+                {"type": "image_url", "image_url": {"url": data_url}}
+            ]
+        })
+    else:
+        model = "llama-3.3-70b-versatile"
+        msgs.append({"role": "user", "content": last_text})
+
+    payload = json.dumps({"model": model, "messages": msgs, "temperature": 0.7}).encode("utf-8")
+    req = urllib.request.Request(
+        "https://groq.com",
+        data=payload,
+        headers={
+            "Authorization": "Bearer " + key,
+            "Content-Type": "application/json",
+            "User-Agent": "CALMTECH-AI/1.0"
+        }
+    )
+    with urllib.request.urlopen(req, timeout=25) as r:
+        res = json.loads(r.read().decode("utf-8"))
+        return res["choices"][0]["message"]["content"]
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -42,39 +63,31 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/chat":
+            out = {"reply": "Servers are busy. Please try again."}
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 d = json.loads(self.rfile.read(length).decode("utf-8"))
                 msg = d.get("message", "")
                 sid = d.get("session_id", "default")
                 media = d.get("media")
-                client = get_client()
+                hist = SESS.setdefault(sid, [])[-8:]
+                hist.append({"role": "user", "text": msg})
 
-                hist = SESS.setdefault(sid, [])[-6:]
-                parts = [types.Part.from_bytes(data=base64.b64decode(media["data"]), mime_type=media["mime"])] if media else []
-                parts.append(types.Part.from_text(text=msg))
-                hist.append(types.Content(role="user", parts=parts))
+                if os.environ.get("GROQ_API_KEY", "").strip():
+                    reply = ask_groq(hist, media)
+                else:
+                    reply = "Please add your free GROQ_API_KEY in Render Environment variables for ultra-fast replies!"
 
-                self.send_response(200)
-                self.send_header("Content-type", "text/plain; charset=utf-8")
-                self.send_header("Cache-Control", "no-cache")
-                self.end_headers()
-
-                full_reply = ""
-                for chunk in client.models.generate_content_stream(model=MODELS[0], contents=hist, config=CFG):
-                    if chunk.text:
-                        full_reply += chunk.text
-                        self.wfile.write(chunk.text.encode("utf-8"))
-                        self.wfile.flush()
-
-                hist[-1] = types.Content(role="user", parts=[types.Part.from_text(text=msg)])
-                hist.append(types.Content(role="model", parts=[types.Part.from_text(text=full_reply)]))
+                hist.append({"role": "assistant", "text": reply})
                 SESS[sid] = hist
+                out = {"reply": reply}
             except Exception as e:
-                try:
-                    self.wfile.write(("Error: " + str(e)).encode("utf-8"))
-                except Exception:
-                    pass
+                out = {"reply": "Connection error: " + str(e)}
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(out).encode("utf-8"))
 
 if __name__ == "__main__":
     ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", 8000))), H).serve_forever()
