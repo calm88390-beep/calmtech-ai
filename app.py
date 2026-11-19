@@ -13,11 +13,15 @@ SYS_PROMPT = (
 SESS = {}
 
 def ask_groq(hist, media):
-    key = os.environ.get("GROQ_API_KEY", "").strip()
+    key = "".join(os.environ.get("GROQ_API_KEY", "").split())
+    if not key.startswith("gsk_"):
+        return "Your GROQ_API_KEY on Render does not look right (it should start with gsk_). Please double-check it in Render Environment settings."
+
     msgs = [{"role": "system", "content": SYS_PROMPT}]
     for h in hist[:-1]:
         msgs.append({"role": h["role"], "content": h["text"]})
     last_text = hist[-1]["text"]
+
     if media:
         model = "meta-llama/llama-4-scout-17b-16e-instruct"
         data_url = "data:" + media["mime"] + ";base64," + media["data"]
@@ -36,12 +40,20 @@ def ask_groq(hist, media):
         "https://groq.com",
         headers={
             "Authorization": "Bearer " + key,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0"
         },
         json={"model": model, "messages": msgs, "temperature": 0.7},
         timeout=25
     )
-    data = r.json()
+    if not r.text.strip():
+        return "Groq returned an empty response (HTTP " + str(r.status_code) + "). Please verify your GROQ_API_KEY in Render."
+    try:
+        data = r.json()
+    except Exception:
+        return "Groq HTTP " + str(r.status_code) + ": " + r.text[:200]
+
     if "choices" in data and data["choices"]:
         return data["choices"].pop(0)["message"]["content"]
     return "Groq API error: " + str(data.get("error", data))
