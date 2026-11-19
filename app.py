@@ -1,7 +1,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
-import urllib.request
+import requests
 
 SYS_PROMPT = (
     "You are CALMTECH, a fast, helpful AI assistant. Current year: 2026. "
@@ -32,19 +32,19 @@ def ask_groq(hist, media):
         model = "llama-3.3-70b-versatile"
         msgs.append({"role": "user", "content": last_text})
 
-    payload = json.dumps({"model": model, "messages": msgs, "temperature": 0.7}).encode("utf-8")
-    req = urllib.request.Request(
+    r = requests.post(
         "https://groq.com",
-        data=payload,
         headers={
             "Authorization": "Bearer " + key,
-            "Content-Type": "application/json",
-            "User-Agent": "CALMTECH-AI/1.0"
-        }
+            "Content-Type": "application/json"
+        },
+        json={"model": model, "messages": msgs, "temperature": 0.7},
+        timeout=25
     )
-    with urllib.request.urlopen(req, timeout=25) as r:
-        res = json.loads(r.read().decode("utf-8"))
-        return res["choices"][0]["message"]["content"]
+    data = r.json()
+    if "choices" in data and data["choices"]:
+        return data["choices"].pop(0)["message"]["content"]
+    return "Groq API error: " + str(data.get("error", data))
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
