@@ -1,6 +1,8 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import base64
 import json
 import os
+import re
 from groq import Groq
 
 SYS_PROMPT = (
@@ -12,6 +14,11 @@ SYS_PROMPT = (
 )
 SESS = {}
 
+def is_img_req(text):
+    low = text.lower().strip()
+    triggers = ("/image", "generate an image", "generate a picture", "create an image", "create a picture", "draw ", "make an image", "make a picture", "generate image", "create image")
+    return any(low.startswith(t) or (" " + t) in low for t in triggers)
+
 def pick_models(client):
     try:
         all_ids = [m.id for m in client.models.list().data if "whisper" not in m.id.lower() and "tts" not in m.id.lower() and "guard" not in m.id.lower()]
@@ -21,17 +28,51 @@ def pick_models(client):
     vis_m = next((m for m in all_ids if "scout" in m or "maverick" in m or "vision" in m), text_m)
     return text_m, vis_m
 
+def create_svg_img(client, model, prompt):
+    clean = prompt
+    for prefix in ("/image", "generate an image of", "generate a picture of", "create an image of", "create a picture of", "make an image of", "make a picture of", "draw a", "draw an", "draw", "generate image of", "create image of"):
+        if clean.lower().startswith(prefix):
+            clean = clean[len(prefix):].strip()
+            break
+    clean = clean or prompt
+    svg_prompt = (
+        f"Create a detailed, colorful, high-quality vector illustration in SVG format for: '{clean}'. "
+        "Output ONLY valid raw <svg xmlns='http://w3.org' viewBox='0 0 512 512' width='512' height='512'>...</svg> code. "
+        "Include vibrant gradients, background scenery, shadows, and clear recognizable shapes. Do not output markdown fences or any text outside the <svg> tag."
+    )
+    res = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": svg_prompt}],
+        temperature=0.6
+    )
+    raw = res.choices.pop(0).message.content or ""
+    match = re.search(r"<svg[\s\S]*?</svg>", raw, re.IGNORECASE)
+    if match:
+        svg_code = match.group(0)
+        if "xmlns=" not in svg_code:
+            svg_code = svg_code.replace("<svg", '<svg xmlns="http://w3.org"', 1)
+        b64 = base64.b64encode(svg_code.encode("utf-8")).decode("utf-8")
+        return "data:image/svg+xml;base64," + b64, clean
+    return None, clean
+
 def ask_groq(hist, media):
     key = "".join(os.environ.get("GROQ_API_KEY", "").split())
     if not key.startswith("gsk_"):
-        return "Your GROQ_API_KEY on Render does not look right (it should start with gsk_). Please double-check it in Render Environment settings."
+        return {"reply": "Your GROQ_API_KEY on Render does not look right (it should start with gsk_). Please double-check it in Render Environment settings."}
 
     client = Groq(api_key=key)
     text_m, vis_m = pick_models(client)
+    last_text = hist[-1]["text"]
+
+    if not media and is_img_req(last_text):
+        img_url, clean_pr = create_svg_img(client, text_m, last_text)
+        if img_url:
+            return {"reply": "Here is your image for: " + clean_pr, "img": img_url}
+        return {"reply": "Could not render that image right now. Try describing it in a simpler way!"}
+
     msgs = [{"role": "system", "content": SYS_PROMPT}]
     for h in hist[:-1]:
         msgs.append({"role": h["role"], "content": h["text"]})
-    last_text = hist[-1]["text"]
 
     if media:
         data_url = "data:" + media["mime"] + ";base64," + media["data"]
@@ -52,7 +93,7 @@ def ask_groq(hist, media):
         messages=msgs,
         temperature=0.7
     )
-    return res.choices.pop(0).message.content
+    return {"reply": res.choices.pop(0).message.content}
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -82,13 +123,12 @@ class H(BaseHTTPRequestHandler):
                 hist.append({"role": "user", "text": msg})
 
                 if os.environ.get("GROQ_API_KEY", "").strip():
-                    reply = ask_groq(hist, media)
+                    out = ask_groq(hist, media)
                 else:
-                    reply = "Please add your free GROQ_API_KEY in Render Environment variables for ultra-fast replies!"
+                    out = {"reply": "Please add your free GROQ_API_KEY in Render Environment variables for ultra-fast replies!"}
 
-                hist.append({"role": "assistant", "text": reply})
+                hist.append({"role": "assistant", "text": out["reply"]})
                 SESS[sid] = hist
-                out = {"reply": reply}
             except Exception as e:
                 out = {"reply": "Connection error: " + str(e)}
 
