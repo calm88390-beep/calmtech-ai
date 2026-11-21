@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+from PIL import Image, ImageDraw, ImageFont
 from groq import Groq
 from huggingface_hub import InferenceClient
 
@@ -15,6 +16,18 @@ SYS_PROMPT = (
     "Give clear, direct, helpful answers, analyze uploaded images in detail, and share full clickable URLs like https://example.com when helpful."
 )
 SESS = {}
+
+def make_icon():
+    img = Image.new("RGB", (512, 512), "#1e1b4b")
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([24, 24, 488, 488], radius=110, fill="#0f172a", outline="#8b5cf6", width=14)
+    d.ellipse([110, 110, 402, 402], outline="#38bdf8", width=18)
+    d.rectangle([280, 185, 420, 327], fill="#0f172a")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+ICON_BYTES = make_icon()
 
 def is_img_req(text):
     low = text.lower().strip()
@@ -32,7 +45,7 @@ def pick_models(client):
         all_ids = []
     fallback = all_ids.pop(0) if all_ids else "qwen/qwen3.8-27b"
     text_m = next((m for m in all_ids if "qwen" in m.lower() or "llama" in m.lower()), fallback)
-    vis_m = next((m for m in all_ids if "vision" in m.lower() or "vl" in m.lower() or "scout" in m.lower() or "maverick" in m.lower()), text_m)
+    vis_m = next((m for m in all_ids if "vision" in m.lower() or "vl" in m.id.lower() or "scout" in m.lower() or "maverick" in m.lower()), text_m)
     return text_m, vis_m
 
 def generate_img(groq_client, text_m, prompt):
@@ -127,6 +140,28 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(b"google-site-verification: google8163534a1c5e7fe2.html")
+            return
+        if self.path == "/manifest.json":
+            with open("manifest.json", "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-type", "application/manifest+json")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if self.path == "/sw.js":
+            with open("sw.js", "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-type", "application/javascript")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if self.path == "/icon.png":
+            self.send_response(200)
+            self.send_header("Content-type", "image/png")
+            self.end_headers()
+            self.wfile.write(ICON_BYTES)
             return
         with open("index.html", "rb") as f:
             html = f.read()
