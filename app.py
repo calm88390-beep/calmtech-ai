@@ -1,9 +1,10 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import base64
+import io
 import json
 import os
-import urllib.request
 from groq import Groq
+from huggingface_hub import InferenceClient
 
 SYS_PROMPT = (
     "You are CALMTECH, a fast, helpful AI assistant. Current year: 2026. "
@@ -16,16 +17,20 @@ SESS = {}
 
 def is_img_req(text):
     low = text.lower().strip()
-    triggers = ("/image", "generate an image", "generate a picture", "create an image", "create a picture", "draw ", "make an image", "make a picture", "generate image", "create image")
-    return any(low.startswith(t) or (" " + t) in low for t in triggers)
+    if low.startswith("/image"):
+        return True
+    verbs = ("generate", "create", "draw", "make", "design", "paint", "show me")
+    nouns = ("image", "picture", "photo", "art", "drawing", "illustration", "logo", "wallpaper")
+    return any(v in low for v in verbs) and any(n in low for n in nouns)
 
 def pick_models(client):
+    skip = ("whisper", "tts", "guard", "orpheus", "playai", "embed", "rerank")
     try:
-        all_ids = [m.id for m in client.models.list().data if "whisper" not in m.id.lower() and "tts" not in m.id.lower() and "guard" not in m.id.lower()]
+        all_ids = [m.id for m in client.models.list().data if not any(s in m.id.lower() for s in skip)]
     except Exception:
         all_ids = []
-    text_m = all_ids[0] if all_ids else "qwen/qwen3.8-27b"
-    vis_m = next((m for m in all_ids if "vision" in m or "vl" in m or "scout" in m or "maverick" in m), text_m)
+    text_m = next((m for m in all_ids if "qwen" in m.id.lower() or "llama" in m.id.lower()), all_ids if all_ids else "qwen/qwen3.8-27b")
+    vis_m = next((m for m in all_ids if "vision" in m.id.lower() or "vl" in m.id.lower() or "scout" in m.id.lower() or "maverick" in m.id.lower()), text_m)
     return text_m, vis_m
 
 def generate_real_img(prompt):
@@ -35,6 +40,8 @@ def generate_real_img(prompt):
         if clean.lower().startswith(prefix):
             clean = clean[len(prefix):].strip()
             break
+    if "of ur choice" in clean.lower() or "of your choice" in clean.lower():
+        clean = "A breathtaking futuristic skyline of Accra, Ghana at golden sunset, ultra detailed digital art"
     clean = clean or prompt
 
     if not hf_key.startswith("hf_"):
@@ -45,25 +52,18 @@ def generate_real_img(prompt):
         "stabilityai/stable-diffusion-xl-base-1.0"
     ]
     last_err = ""
+    hf = InferenceClient(api_key=hf_key)
     for m in models:
         try:
-            req = urllib.request.Request(
-                "https://huggingface.co" + m,
-                data=json.dumps({"inputs": clean}).encode("utf-8"),
-                headers={
-                    "Authorization": "Bearer " + hf_key,
-                    "Content-Type": "application/json"
-                }
-            )
-            with urllib.request.urlopen(req, timeout=35) as r:
-                raw = r.read()
-                if len(raw) > 1000:
-                    b64 = base64.b64encode(raw).decode("utf-8")
-                    return "data:image/jpeg;base64," + b64, clean, ""
+            pil_img = hf.text_to_image(clean, model=m)
+            buf = io.BytesIO()
+            pil_img.save(buf, format="JPEG", quality=88)
+            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            return "data:image/jpeg;base64," + b64, clean, ""
         except Exception as e:
             last_err = str(e)
             continue
-    return None, clean, "Image server is busy (" + last_err[:80] + "). Please try again in a few seconds."
+    return None, clean, "Image generation error: " + last_err[:120]
 
 def ask_groq(hist, media):
     key = "".join(os.environ.get("GROQ_API_KEY", "").split())
