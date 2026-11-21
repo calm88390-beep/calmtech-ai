@@ -21,11 +21,11 @@ def is_img_req(text):
 
 def pick_models(client):
     try:
-        all_ids = [m.id for m in client.models.list().data if "whisper" not in m.id.lower() and "tts" not in m.id.lower() and "guard" not in m.id.lower() and "qwen" not in m.id.lower()]
+        all_ids = [m.id for m in client.models.list().data if "whisper" not in m.id.lower() and "tts" not in m.id.lower() and "guard" not in m.id.lower()]
     except Exception:
         all_ids = []
-    text_m = next((m for m in all_ids if "llama-3.1-8b" in m or "llama-4" in m or "llama-3" in m), "llama-3.1-8b-instant")
-    vis_m = next((m for m in all_ids if "scout" in m or "maverick" in m or "vision" in m), text_m)
+    text_m = all_ids[0] if all_ids else "qwen/qwen3.8-27b"
+    vis_m = next((m for m in all_ids if "vision" in m or "vl" in m or "scout" in m or "maverick" in m), text_m)
     return text_m, vis_m
 
 def generate_real_img(prompt):
@@ -101,7 +101,7 @@ def ask_groq(hist, media):
         model=model,
         messages=msgs,
         temperature=0.7,
-        max_tokens=800
+        max_tokens=700
     )
     return {"reply": res.choices.pop(0).message.content}
 
@@ -129,7 +129,7 @@ class H(BaseHTTPRequestHandler):
                 msg = d.get("message", "")
                 sid = d.get("session_id", "default")
                 media = d.get("media")
-                hist = SESS.setdefault(sid, [])[-6:]
+                hist = SESS.setdefault(sid, [])[-4:]
                 hist.append({"role": "user", "text": msg})
 
                 if os.environ.get("GROQ_API_KEY", "").strip():
