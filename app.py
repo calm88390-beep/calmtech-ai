@@ -2,7 +2,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import base64
 import json
 import os
-import re
+import urllib.request
 from groq import Groq
 
 SYS_PROMPT = (
@@ -21,55 +21,64 @@ def is_img_req(text):
 
 def pick_models(client):
     try:
-        all_ids = [m.id for m in client.models.list().data if "whisper" not in m.id.lower() and "tts" not in m.id.lower() and "guard" not in m.id.lower()]
+        all_ids = [m.id for m in client.models.list().data if "whisper" not in m.id.lower() and "tts" not in m.id.lower() and "guard" not in m.id.lower() and "qwen" not in m.id.lower()]
     except Exception:
         all_ids = []
-    text_m = next((m for m in all_ids if "70b" in m or "llama-4" in m or "qwen" in m or "llama-3" in m), "llama-3.1-8b-instant")
+    text_m = next((m for m in all_ids if "llama-3.1-8b" in m or "llama-4" in m or "llama-3" in m), "llama-3.1-8b-instant")
     vis_m = next((m for m in all_ids if "scout" in m or "maverick" in m or "vision" in m), text_m)
     return text_m, vis_m
 
-def create_svg_img(client, model, prompt):
+def generate_real_img(prompt):
+    hf_key = "".join(os.environ.get("HF_TOKEN", "").split())
     clean = prompt
     for prefix in ("/image", "generate an image of", "generate a picture of", "create an image of", "create a picture of", "make an image of", "make a picture of", "draw a", "draw an", "draw", "generate image of", "create image of"):
         if clean.lower().startswith(prefix):
             clean = clean[len(prefix):].strip()
             break
     clean = clean or prompt
-    svg_prompt = (
-        f"Create a detailed, colorful, high-quality vector illustration in SVG format for: '{clean}'. "
-        "Output ONLY valid raw <svg xmlns='http://w3.org' viewBox='0 0 512 512' width='512' height='512'>...</svg> code. "
-        "Include vibrant gradients, background scenery, shadows, and clear recognizable shapes. Do not output markdown fences or any text outside the <svg> tag."
-    )
-    res = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": svg_prompt}],
-        temperature=0.6
-    )
-    raw = res.choices.pop(0).message.content or ""
-    match = re.search(r"<svg[\s\S]*?</svg>", raw, re.IGNORECASE)
-    if match:
-        svg_code = match.group(0)
-        if "xmlns=" not in svg_code:
-            svg_code = svg_code.replace("<svg", '<svg xmlns="http://w3.org"', 1)
-        b64 = base64.b64encode(svg_code.encode("utf-8")).decode("utf-8")
-        return "data:image/svg+xml;base64," + b64, clean
-    return None, clean
+
+    if not hf_key.startswith("hf_"):
+        return None, clean, "Please add your free HF_TOKEN in Render Environment variables to enable real AI image generation."
+
+    models = [
+        "black-forest-labs/FLUX.1-schnell",
+        "stabilityai/stable-diffusion-xl-base-1.0"
+    ]
+    last_err = ""
+    for m in models:
+        try:
+            req = urllib.request.Request(
+                "https://huggingface.co" + m,
+                data=json.dumps({"inputs": clean}).encode("utf-8"),
+                headers={
+                    "Authorization": "Bearer " + hf_key,
+                    "Content-Type": "application/json"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=35) as r:
+                raw = r.read()
+                if len(raw) > 1000:
+                    b64 = base64.b64encode(raw).decode("utf-8")
+                    return "data:image/jpeg;base64," + b64, clean, ""
+        except Exception as e:
+            last_err = str(e)
+            continue
+    return None, clean, "Image server is busy (" + last_err[:80] + "). Please try again in a few seconds."
 
 def ask_groq(hist, media):
     key = "".join(os.environ.get("GROQ_API_KEY", "").split())
     if not key.startswith("gsk_"):
         return {"reply": "Your GROQ_API_KEY on Render does not look right (it should start with gsk_). Please double-check it in Render Environment settings."}
 
-    client = Groq(api_key=key)
-    text_m, vis_m = pick_models(client)
     last_text = hist[-1]["text"]
-
     if not media and is_img_req(last_text):
-        img_url, clean_pr = create_svg_img(client, text_m, last_text)
+        img_url, clean_pr, err = generate_real_img(last_text)
         if img_url:
             return {"reply": "Here is your image for: " + clean_pr, "img": img_url}
-        return {"reply": "Could not render that image right now. Try describing it in a simpler way!"}
+        return {"reply": err}
 
+    client = Groq(api_key=key)
+    text_m, vis_m = pick_models(client)
     msgs = [{"role": "system", "content": SYS_PROMPT}]
     for h in hist[:-1]:
         msgs.append({"role": h["role"], "content": h["text"]})
@@ -91,7 +100,8 @@ def ask_groq(hist, media):
     res = client.chat.completions.create(
         model=model,
         messages=msgs,
-        temperature=0.7
+        temperature=0.7,
+        max_tokens=800
     )
     return {"reply": res.choices.pop(0).message.content}
 
@@ -119,13 +129,13 @@ class H(BaseHTTPRequestHandler):
                 msg = d.get("message", "")
                 sid = d.get("session_id", "default")
                 media = d.get("media")
-                hist = SESS.setdefault(sid, [])[-8:]
+                hist = SESS.setdefault(sid, [])[-6:]
                 hist.append({"role": "user", "text": msg})
 
                 if os.environ.get("GROQ_API_KEY", "").strip():
                     out = ask_groq(hist, media)
                 else:
-                    out = {"reply": "Please add your free GROQ_API_KEY in Render Environment variables for ultra-fast replies!"}
+                    out = {"reply": "Please add your free GROQ_API_KEY in Render Environment variables!"}
 
                 hist.append({"role": "assistant", "text": out["reply"]})
                 SESS[sid] = hist
