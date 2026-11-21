@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="google-site-verification" content="jWhj15D6BV4TN1S2Tpu9ZfqE2_R1fkhahG2OEWHHYmA" />
 <title>CALMTECH AI</title>
+  <link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#1e1b4b">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,sans-serif;background:radial-gradient(circle at top left,#1e1b4b,#090d16 55%,#06283d);color:#f8fafc;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
@@ -58,7 +60,8 @@ function esc(t){return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g
 function fmt(t){return esc(t).split(/(\s+)/).map(w=>w.startsWith("http://")||w.startsWith("https://")?`<a href="${w}" target="_blank">${w}</a>`:w).join("");}
 async function send(){const i=document.getElementById("inp"),b=document.getElementById("btn"),pb=document.getElementById("pbtn"),c=document.getElementById("chat"),t=i.value.trim();if((!t&&!upImg)||b.disabled)return;const w=document.getElementById("w");if(w)w.remove();const lbl=t||(upImg?"Analyze this image":"");if(!chats[sid])chats[sid]={t:lbl.slice(0,32),m:[]};chats[sid].m.push({r:"u",t:lbl});save();i.disabled=b.disabled=pb.disabled=true;c.innerHTML+=`<div class="row u"><div class="msg">${upImg?`<img src="${upImg.url}">`:""}${esc(lbl)}</div></div>`;const ms=upImg?{mime:upImg.mime,data:upImg.data}:null;i.value="";clrImg();const id="t"+Date.now();c.innerHTML+=`<div class="row b" id="${id}"><div class="msg th">${ms?"Analyzing photo...":"Thinking..."}</div></div>`;c.scrollTop=c.scrollHeight;try{const r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:t||"Analyze this image in detail.",session_id:sid,media:ms})});const d=await r.json();chats[sid].m.push({r:"b",t:d.reply});save();document.getElementById(id).innerHTML=`<div class="msg">${fmt(d.reply)}</div>`;}catch(e){document.getElementById(id).innerHTML=`<div class="msg">Error: ${esc(e.message)}</div>`;}i.disabled=b.disabled=pb.disabled=false;i.focus();c.scrollTop=c.scrollHeight;}
 newC();
-</script>
+</script if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js");
+>
 <script data-cfasync="false" src="https://bauval.org/14/f54ce76cb7abef7177a6da6348ccbb30"></script>
 </body>
 </html>
