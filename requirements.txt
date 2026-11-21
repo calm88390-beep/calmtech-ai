@@ -1,2 +1,3 @@
 groq
 huggingface_hub
+pillow
