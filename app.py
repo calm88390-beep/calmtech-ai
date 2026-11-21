@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import os
+import re
 from groq import Groq
 from huggingface_hub import InferenceClient
 
@@ -29,11 +30,12 @@ def pick_models(client):
         all_ids = [m.id for m in client.models.list().data if not any(s in m.id.lower() for s in skip)]
     except Exception:
         all_ids = []
-    text_m = next((m for m in all_ids if "qwen" in m.id.lower() or "llama" in m.id.lower()), all_ids if all_ids else "qwen/qwen3.8-27b")
-    vis_m = next((m for m in all_ids if "vision" in m.id.lower() or "vl" in m.id.lower() or "scout" in m.id.lower() or "maverick" in m.id.lower()), text_m)
+    fallback = all_ids.pop(0) if all_ids else "qwen/qwen3.8-27b"
+    text_m = next((m for m in all_ids if "qwen" in m.lower() or "llama" in m.lower()), fallback)
+    vis_m = next((m for m in all_ids if "vision" in m.lower() or "vl" in m.lower() or "scout" in m.lower() or "maverick" in m.lower()), text_m)
     return text_m, vis_m
 
-def generate_real_img(prompt):
+def generate_img(groq_client, text_m, prompt):
     hf_key = "".join(os.environ.get("HF_TOKEN", "").split())
     clean = prompt
     for prefix in ("/image", "generate an image of", "generate a picture of", "create an image of", "create a picture of", "make an image of", "make a picture of", "draw a", "draw an", "draw", "generate image of", "create image of"):
@@ -44,41 +46,54 @@ def generate_real_img(prompt):
         clean = "A breathtaking futuristic skyline of Accra, Ghana at golden sunset, ultra detailed digital art"
     clean = clean or prompt
 
-    if not hf_key.startswith("hf_"):
-        return None, clean, "Please add your free HF_TOKEN in Render Environment variables to enable real AI image generation."
+    if hf_key.startswith("hf_"):
+        for m in ["black-forest-labs/FLUX.1-schnell", "stabilityai/stable-diffusion-xl-base-1.0"]:
+            try:
+                hf = InferenceClient(provider="hf-inference", api_key=hf_key)
+                pil_img = hf.text_to_image(clean, model=m)
+                buf = io.BytesIO()
+                pil_img.save(buf, format="JPEG", quality=88)
+                b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                return "data:image/jpeg;base64," + b64, clean
+            except Exception:
+                continue
 
-    models = [
-        "black-forest-labs/FLUX.1-schnell",
-        "stabilityai/stable-diffusion-xl-base-1.0"
-    ]
-    last_err = ""
-    hf = InferenceClient(api_key=hf_key)
-    for m in models:
-        try:
-            pil_img = hf.text_to_image(clean, model=m)
-            buf = io.BytesIO()
-            pil_img.save(buf, format="JPEG", quality=88)
-            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-            return "data:image/jpeg;base64," + b64, clean, ""
-        except Exception as e:
-            last_err = str(e)
-            continue
-    return None, clean, "Image generation error: " + last_err[:120]
+    svg_prompt = (
+        f"Create a colorful, detailed vector illustration in SVG format for: '{clean}'. "
+        "Output ONLY valid raw <svg xmlns='http://w3.org' viewBox='0 0 512 512' width='512' height='512'>...</svg> code. "
+        "Include vibrant gradients, background scenery, and recognizable shapes. No markdown fences or extra text."
+    )
+    res = groq_client.chat.completions.create(
+        model=text_m,
+        messages=[{"role": "user", "content": svg_prompt}],
+        temperature=0.6,
+        max_tokens=750
+    )
+    raw = res.choices.pop(0).message.content or ""
+    match = re.search(r"<svg[\s\S]*?</svg>", raw, re.IGNORECASE)
+    if match:
+        svg_code = match.group(0)
+        if "xmlns=" not in svg_code:
+            svg_code = svg_code.replace("<svg", '<svg xmlns="http://w3.org"', 1)
+        b64 = base64.b64encode(svg_code.encode("utf-8")).decode("utf-8")
+        return "data:image/svg+xml;base64," + b64, clean
+    return None, clean
 
 def ask_groq(hist, media):
     key = "".join(os.environ.get("GROQ_API_KEY", "").split())
     if not key.startswith("gsk_"):
         return {"reply": "Your GROQ_API_KEY on Render does not look right (it should start with gsk_). Please double-check it in Render Environment settings."}
 
-    last_text = hist[-1]["text"]
-    if not media and is_img_req(last_text):
-        img_url, clean_pr, err = generate_real_img(last_text)
-        if img_url:
-            return {"reply": "Here is your image for: " + clean_pr, "img": img_url}
-        return {"reply": err}
-
     client = Groq(api_key=key)
     text_m, vis_m = pick_models(client)
+    last_text = hist[-1]["text"]
+
+    if not media and is_img_req(last_text):
+        img_url, clean_pr = generate_img(client, text_m, last_text)
+        if img_url:
+            return {"reply": "Here is your image for: " + clean_pr, "img": img_url}
+        return {"reply": "Could not render that image right now. Try a simpler description!"}
+
     msgs = [{"role": "system", "content": SYS_PROMPT}]
     for h in hist[:-1]:
         msgs.append({"role": h["role"], "content": h["text"]})
