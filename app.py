@@ -163,6 +163,14 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(ICON_BYTES)
             return
+        if self.path == "/.well-known/assetlinks.json":
+            with open(".well-known/assetlinks.json", "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(data)
+            return
         with open("index.html", "rb") as f:
             html = f.read()
         self.send_response(200)
