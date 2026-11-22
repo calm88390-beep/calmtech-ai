@@ -4,7 +4,7 @@ import io
 import json
 import os
 import re
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from groq import Groq
 from huggingface_hub import InferenceClient
 
@@ -20,9 +20,9 @@ SESS = {}
 def make_icon():
     img = Image.new("RGB", (512, 512), "#1e1b4b")
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle([24, 24, 488, 488], radius=110, fill="#0f172a", outline="#8b5cf6", width=14)
-    d.ellipse([110, 110, 402, 402], outline="#38bdf8", width=18)
-    d.rectangle([280, 185, 420, 327], fill="#0f172a")
+    d.rounded_rectangle([(24, 24), (488, 488)], radius=110, fill="#0f172a", outline="#8b5cf6", width=14)
+    d.ellipse([(120, 120), (392, 392)], outline="#38bdf8", width=26)
+    d.rectangle([(265, 175), (415, 337)], fill="#0f172a")
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
@@ -44,8 +44,8 @@ def pick_models(client):
     except Exception:
         all_ids = []
     fallback = all_ids.pop(0) if all_ids else "qwen/qwen3.8-27b"
-    text_m = next((m for m in all_ids if "qwen" in m.lower() or "llama" in m.lower()), fallback)
-    vis_m = next((m for m in all_ids if "vision" in m.lower() or "vl" in m.id.lower() or "scout" in m.lower() or "maverick" in m.lower()), text_m)
+    text_m = next((name for name in all_ids if "qwen" in name.lower() or "llama" in name.lower()), fallback)
+    vis_m = next((name for name in all_ids if "vision" in name.lower() or "vl" in name.lower() or "scout" in name.lower() or "maverick" in name.lower()), text_m)
     return text_m, vis_m
 
 def generate_img(groq_client, text_m, prompt):
